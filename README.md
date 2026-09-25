@@ -17,7 +17,7 @@ This repository contains the project proposal and supporting files for our STA30
 
 | File | Description |
 |---|---|
-| `Group Formation.pdf` | Record of group formation / member assignment |
+| `Group Formation.pdf` | Record of group formation |
 | `Group Formation.xlsx` | Spreadsheet tracking group members |
 | `STA304 Project Proposal.docx` | Editable draft of the project proposal |
 | `STA304 Project Proposal.pdf` | Final version of the project proposal, submitted for grading |
