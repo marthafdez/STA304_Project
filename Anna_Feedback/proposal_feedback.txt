@@ -1,0 +1,31 @@
+You will need to email me when you have changed your survey for me to post on Piazza.
+
+Disclaimer: in the process of constructing feedback, I recorded my audio and got AI to rephrase my feedback in a concise, clear manner so that I can mark faster + you get more detailed feedback. I did not run any of the assignments through AI.
+
+Simple and multiple linear regression
+You plan to use multiple linear regression, so you do not need simple linear regression as well. Simple linear regression is a special case of multiple linear regression. If you see an effect in the simple model that disappears in the multiple model, that tells you the effect is not strong once the other covariates are in the model.
+
+Model selection
+Please state exactly which model selection method you will use. The method matters, so naming it is better than leaving it general.
+
+(-0.05 for vagueness of the advanced test)
+
+VIF and multicollinearity
+You do not need a VIF check to deal with collinearity. Multicollinearity is not a problem that needs curing here. It matters in machine learning, where the goal is accurate prediction. In this course we are not predicting anything, and we are not running a causal experiment. We are describing associations, trends, and patterns among the students in our population, so multicollinearity does not get in the way of that. There is published literature on why multicollinearity is not a disease that needs curing if you want to read more (feel free to email me if you really care)
+
+Gender question
+Please include an "other" option. It may not come up often in a stats context, but it can happen, so it is safer to include it.
+
+Most important factor when choosing housing
+Be careful with how you analyze this question, since it asks students to rate several factors from 1 to 5. None of the methods in the proposal instructions would let you properly analyze this kind of data, and you cannot use it in any of the tests you have proposed. I would rather you stay close to the methods from the course material, so nobody ends up with an incorrect analysis. If you want to take on the challenge, that is fine, but please be careful with your results.
+
+Satisfaction questions
+Your satisfaction questions use a 1 to 5 scale. Please widen it to 1 to 7 or 1 to 10. You will likely treat these as quantitative, so a larger scale is better.
+
+Commute length
+Please ask students to enter a number for commute length. This question is not sensitive, and the variable is quantitative in nature.
+Housing cost and GPA are more sensitive, so I understand using ranges for those two.
+
+(-0.1 for questionnaire design)
+
+0.85/1
