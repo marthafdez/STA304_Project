@@ -1,0 +1,4 @@
+Housing cost codebook
+Your housing cost variable is coded as 0 through 6, where 0 means the participant does not pay for housing. For the paid categories, please recode each range to its midpoint instead of using 1 through 6 as arbitrary labels. For example, a range of $0 to $500 could be coded as $250, and a range of $501 to $1,000 could be coded as $750. This gives you an actual number to work with in your analysis, rather than values that only represent an ordering between categories.
+
+1/1
