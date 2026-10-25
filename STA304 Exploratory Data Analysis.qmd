@@ -1,0 +1,289 @@
+---
+title: "Exploratory Data Analysis: Factors Affecting Student Housing Choices"
+subtitle: "STA304H5, Group 33"
+date: "October 25, 2026"
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    geometry: margin=1in
+    fig-pos: "H"
+    tbl-cap-location: top
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{fvextra}
+        \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(tidyverse)
+library(easystats)   # datawizard, performance, report, see
+library(knitr)
+
+theme_set(theme_minimal(base_size = 11))
+
+# p-value from a performance::check_*() result
+pval <- function(x) as.numeric(x)[1]
+fmt_p <- function(p) ifelse(p < .001, "< .001", paste("=", formatC(p, format = "f", digits = 3)))
+
+# print an easystats report() with readable variable names
+pretty_report <- function(x) {
+  txt <- paste(as.character(x), collapse = " ")
+  readable <- c(transportation_satisfaction = "transportation satisfaction",
+                housing_satisfaction = "housing satisfaction",
+                commute_time = "commute time", housing_type = "housing arrangement")
+  for (v in names(readable)) txt <- gsub(v, readable[[v]], txt, fixed = TRUE)
+  cat(gsub("\n\n  - ", "\n\n- ", txt))
+}
+
+# LaTeX tables that stay on one page
+tex_table <- function(x, caption, ...) {
+  kable(x, format = "latex", booktabs = TRUE, caption = caption, linesep = "", ...) |>
+    kableExtra::kable_styling(latex_options = "hold_position")
+}
+
+# ---- Code book labels (edit here if the survey coding differs) ----
+gender_labels  <- c("0" = "Male", "1" = "Female", "2" = "Other")
+status_labels  <- c("0" = "Domestic", "1" = "International")
+housing_labels <- c("2" = "Living with family",
+                    "1" = "Off-campus",
+                    "3" = "Living with roommate",
+                    "0" = "Residence")
+cost_labels    <- c("0" = "I do not pay for housing",
+                    "1" = "Less than $500",
+                    "2" = "$501 to $1000",
+                    "3" = "$1001 to $1500",
+                    "4" = "$1501 to $2000",
+                    "5" = "$2001 to $2500",
+                    "6" = "More than $2500")
+```
+
+```{r load-clean}
+# fileEncoding strips the byte-order mark the export puts before "studentID"
+raw <- read.csv("a1.csv",
+                check.names = FALSE, fileEncoding = "UTF-8-BOM")
+n_raw <- nrow(raw)
+n_cols <- ncol(raw)
+
+# The commute_time header contains a line break; strip it and standardise names
+names(raw) <- tolower(trimws(gsub("[\r\n]", "", names(raw))))
+# drop the empty trailing columns from the export
+raw <- raw[, names(raw) != ""]
+raw <- raw |> rename(transportation_satisfaction = transportation_satisfacton)
+
+likert_items <- c("distance_importance", "rent_importance", "commute_importance",
+                  "amenities_importance", "roommates_importance")
+
+df <- raw |>
+  # halves937 submitted twice: keep the first entry (rows are in submission order)
+  distinct(studentid, .keep_all = TRUE) |>
+  mutate(across(all_of(likert_items), as.numeric),
+         commute_time = as.numeric(commute_time),
+         gender         = factor(gender_labels[as.character(gender)],
+                                 levels = gender_labels),
+         student_status = factor(status_labels[as.character(student_status)],
+                                 levels = status_labels),
+         housing_type   = factor(housing_labels[trimws(housing_type)],
+                                 levels = housing_labels),
+         cost = factor(cost_labels[as.character(cost)], levels = cost_labels))
+
+n_clean <- nrow(df)
+n_dup   <- n_raw - n_clean
+```
+
+# Data Loading and Cleaning
+
+The raw survey export contains 59 responses from the target population; students enrolled in STA304H5 (Fall 2026). After data cleaning but before analysis, the following issues arose and were handled:
+
+* **Duplicate respondent.** One student ID has two entries, with identical answers except for housing satisfaction. Only the first entry was kept, leaving **`r n_clean` respondents**.
+* **Formatting.** The commute time column header contained a line break, the transportation satisfaction header contained a typo, and the export included `r n_cols - ncol(raw)` empty trailing columns. The headers were renamed and the empty columns removed.
+* **Sparse category.** Only one respondent lives in residence. With $n = 1$ this group is reported in the descriptive tables but excluded from the between-group comparison, so the residence stratum planned in our proposal is effectively absent from the sample.
+* **Check against the Google Forms summary.** The coded file matches the form's response summary on every question except two. The form shows 26 students living with family and 22 off campus, while the coded file has 27 and 21. For monthly cost, the form shows 9 responses of \$501 to \$1000 and 3 of \$1501 to \$2000, while the coded file has 12 and 0. These four responses should be re-checked against the raw form export before the final report.
+
+Participants were asked to rate (1 to 5) the importance of the following factors when choosing housing: distance, rent, commute, amenities, and roommates. Similarly participants rated (1 to 10) their satisfaction with their current housing and transportation.
+
+# Summary Statistics
+
+```{r quant-table}
+quant_vars <- c("Importance of distance to campus" = "distance_importance",
+                "Importance of rent"                = "rent_importance",
+                "Importance of commute"             = "commute_importance",
+                "Importance of amenities"           = "amenities_importance",
+                "Importance of roommates"           = "roommates_importance",
+                "Housing satisfaction"              = "housing_satisfaction",
+                "Commute time (minutes)"            = "commute_time",
+                "Transportation satisfaction"       = "transportation_satisfaction")
+
+# mean, SD, IQR and range from datawizard; median from a second call
+quant_tbl <- datawizard::describe_distribution(
+    df, select = unname(quant_vars), centrality = "mean",
+    iqr = TRUE, range = TRUE) |>
+  as.data.frame() |>
+  mutate(Median = as.data.frame(datawizard::describe_distribution(
+    df, select = unname(quant_vars), centrality = "median"))$Median)
+
+quant_tbl |>
+  transmute(Variable = names(quant_vars)[match(Variable, quant_vars)],
+            Median, Mean, SD, IQR,
+            Range = sprintf("(%g, %g)", Min, Max), n) |>
+  tex_table("Summary statistics for the quantitative variables (after cleaning).",
+            digits = 2)
+```
+
+```{r qual-table}
+qual_df <- df |>
+  select(Gender = gender, `Student status` = student_status,
+         `Housing arrangement` = housing_type, `Monthly housing cost` = cost)
+
+qual_tbl <- map_dfr(names(qual_df), function(v) {
+  tab <- table(qual_df[[v]])
+  tab <- tab[tab > 0]
+  tibble(Variable = c(v, rep("", length(tab) - 1)),
+         Value = names(tab),
+         N = as.integer(tab),
+         `Percent (%)` = round(100 * as.numeric(tab) / sum(tab), 1),
+         `Cumulative (%)` = round(100 * cumsum(as.numeric(tab)) / sum(tab), 1))
+})
+tex_table(qual_tbl, "Counts and percentages for the qualitative variables.")
+```
+
+```{r stats-inline}
+qs <- quant_tbl |> column_to_rownames("Variable")
+pct <- function(v, lvl) round(100 * mean(df[[v]] == lvl, na.rm = TRUE))
+```
+
+**Comments.** Gender is split almost evenly (`r sum(df$gender == "Male")` male, `r sum(df$gender == "Female")` female, `r sum(df$gender == "Other")` other), and so is student status. Living with family is the most common arrangement (`r pct("housing_type", "Living with family")`%), followed by off campus (`r pct("housing_type", "Off-campus")`%) and living with roommates (`r pct("housing_type", "Living with roommate")`%). Only one student lives in residence. Almost a third of respondents do not pay for housing, which matches the large share living with family.
+
+All five importance items have medians of 4 or 5 on a 5-point scale: respondents rate almost every factor as important, so these items have limited spread and will discriminate poorly between students. Housing satisfaction is high overall (mean `r round(qs["housing_satisfaction", "Mean"], 2)`, median `r qs["housing_satisfaction", "Median"]` out of 10) and is bunched against the top of the scale. Commute time is the one clearly skewed variable: its mean (`r round(qs["commute_time", "Mean"], 1)` min) is well above its median (`r qs["commute_time", "Median"]` min) and the SD (`r round(qs["commute_time", "SD"], 1)`) is large relative to the IQR (`r qs["commute_time", "IQR"]`), driven by a long right tail (two students report 135 and 169 minutes). As the course notes caution, similar means and medians on the other variables do not by themselves show that those variables are normally distributed; normality is checked on model residuals in Section 3.
+
+```{r cross-table}
+cross <- df |> count(housing_type, student_status) |>
+  group_by(housing_type) |>
+  mutate(cell = sprintf("%d (%.1f%%)", n, 100 * n / sum(n))) |>
+  select(-n) |>
+  pivot_wider(names_from = student_status, values_from = cell,
+              values_fill = "0 (0.0%)") |>
+  left_join(count(df, housing_type, name = "Total"), by = "housing_type") |>
+  rename(`Housing arrangement` = housing_type)
+tex_table(cross, paste("Housing arrangement by student status (row percentages).",
+                       "Domestic students mostly live with family, while international students",
+                       "mostly live off campus or with roommates, so housing arrangement and",
+                       "student status are strongly related in this sample."),
+          align = "lrrr")
+```
+
+# Plots and Model Assumptions
+
+From our proposal, we report a simple test and an advanced test: (1) a simple linear regression of **transportation satisfaction on commute time**, and (2) a one-way ANOVA comparing **housing satisfaction across the three housing arrangements**.
+
+## Analysis 1: Commute time and transportation satisfaction
+
+```{r fig-scatter}
+#| fig-cap: "Transportation satisfaction against commute time with the fitted least-squares line and 95% confidence band. Satisfaction tends to fall as commute time rises. The two commutes above two hours sit far to the right and have high leverage on the slope."
+#| fig-height: 3.6
+#| fig-width: 6.5
+ggplot(df, aes(x = commute_time, y = transportation_satisfaction)) +
+  geom_jitter(width = 0, height = 0.15, alpha = 0.7, colour = "#2C6E91") +
+  geom_smooth(method = "lm", colour = "#C0392B", fill = "grey75") +
+  scale_y_continuous(breaks = 1:10) +
+  labs(x = "Commute time to campus (minutes)",
+       y = "Transportation satisfaction (1 to 10)",
+       title = "Transportation Satisfaction vs Commute Time")
+```
+
+```{r model1}
+m1 <- lm(transportation_satisfaction ~ commute_time, data = df)
+norm1 <- performance::check_normality(m1)
+hom1  <- performance::check_heteroscedasticity(m1)
+cook1 <- cooks.distance(m1)
+# sensitivity check: refit without the commutes over two hours
+m1_trim <- lm(transportation_satisfaction ~ commute_time,
+              data = filter(df, commute_time < 120))
+```
+
+```{r fig-check1}
+#| fig-cap: "Assumption checks for the regression of transportation satisfaction on commute time (performance package). Top: linearity and homogeneity of variance; bottom: normality of residuals (Q-Q plot and density)."
+#| fig-height: 6
+#| fig-width: 7
+performance::check_model(m1, check = c("linearity", "homogeneity", "qq", "normality"))
+```
+
+**Interpretation.** Most residuals follow the Q-Q line and the residual density is close to the normal curve, with a slightly heavier lower tail. That tail comes from a handful of students with ordinary commutes (25 to 60 minutes) who nonetheless rated their transportation 1 to 4, which the model cannot explain with commute time alone. The Shapiro-Wilk test does not reject normality (p `r fmt_p(pval(norm1))`), so the **normality assumption is reasonably satisfied**. The homogeneity panel has no clear funnel shape and the Breusch-Pagan test does not reject constant variance (p `r fmt_p(pval(hom1))`), so **homogeneity of variance also holds**. The one caution is leverage: almost all fitted values sit between 6 and 8, and the left side of both reference lines rests on very few points. The 169-minute commute has a Cook's distance of `r round(max(cook1), 2)`, far larger than any other observation (next largest `r round(sort(cook1, decreasing = TRUE)[2], 2)`), although it stays below the package's default outlier threshold. Refitting without the two commutes over two hours is therefore reported as a sensitivity check in Section 4.
+
+## Analysis 2: Housing satisfaction by housing arrangement
+
+```{r anova-data}
+df_aov <- df |> filter(housing_type != "Residence") |> droplevels()
+```
+
+```{r fig-box}
+#| fig-cap: "Housing satisfaction by housing arrangement (the single residence respondent is excluded). Medians are 8 to 9 in every group and the boxes overlap heavily; students living with family are slightly more satisfied, and students living off campus show the widest spread and the lowest scores."
+#| fig-height: 3.6
+#| fig-width: 6.5
+ggplot(df_aov, aes(x = housing_type, y = housing_satisfaction, fill = housing_type)) +
+  geom_boxplot(alpha = 0.8, outlier.shape = NA, show.legend = FALSE) +
+  geom_jitter(width = 0.12, height = 0.1, alpha = 0.5, size = 1.4) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3, fill = "white") +
+  scale_fill_manual(values = c("#2C6E91", "#E67E22", "#27AE60")) +
+  scale_y_continuous(breaks = 1:10) +
+  labs(x = "Housing arrangement", y = "Housing satisfaction (1 to 10)",
+       title = "Housing Satisfaction by Housing Arrangement",
+       caption = "Diamonds mark group means.") +
+  guides(fill = "none")
+```
+
+```{r model2}
+m2 <- lm(housing_satisfaction ~ housing_type, data = df_aov)
+norm2 <- performance::check_normality(m2)
+# Levene's test via car (performance::check_homogeneity's Levene option errors in recent versions)
+hom2  <- car::leveneTest(housing_satisfaction ~ housing_type, data = df_aov)[["Pr(>F)"]][1]
+```
+
+```{r fig-check2}
+#| fig-cap: "Assumption checks for the one-way ANOVA of housing satisfaction on housing arrangement (performance package): homogeneity of variance across groups and normality of residuals."
+#| fig-height: 3.4
+#| fig-width: 7
+performance::check_model(m2, check = c("homogeneity", "qq"))
+```
+
+**Interpretation.** Levene's test finds no evidence that the group variances differ (p `r fmt_p(hom2)`), so **homogeneity of variance holds**. Normality of residuals is **violated** (Shapiro-Wilk p `r fmt_p(pval(norm2))`): the Q-Q plot shows the stepped pattern of a discrete rating and a ceiling at 10. With roughly balanced, moderately sized groups the F test is fairly robust to this, but a Kruskal-Wallis test would be a reasonable nonparametric check. As instructed, we note the violation and proceed.
+
+# Statistical Tests
+
+## Simple linear regression
+
+```{r report1, results='asis'}
+pretty_report(report::report(m1))
+b1 <- coef(m1)[["commute_time"]]
+```
+
+**Directional conclusion.** Commute time has a statistically significant **negative** effect on transportation satisfaction: each additional 10 minutes of commuting is associated with a drop of about `r round(abs(10 * b1), 2)` points on the 10-point scale. Commute time alone explains a moderate share of the variation (R² = `r round(summary(m1)$r.squared, 2)`). The result does not depend on the two extreme commutes: refitting without the commutes over two hours gives a slope of `r round(coef(m1_trim)[["commute_time"]], 3)` per minute (p = `r round(summary(m1_trim)$coefficients["commute_time", 4], 3)`), which is steeper than in the full model, so the negative relationship is, if anything, stronger among typical commuters.
+
+## One-way ANOVA
+
+```{r report2, results='asis'}
+a2 <- aov(housing_satisfaction ~ housing_type, data = df_aov)
+pretty_report(report::report(a2))
+f2 <- summary(a2)[[1]]
+```
+
+**Conclusion.** The results show that no predictor is significant. Hence, there is no statistically significant difference in mean housing satisfaction between students living with family, living off campus and living with roommates (F(`r f2$Df[1]`, `r f2$Df[2]`) = `r round(f2[["F value"]][1], 2)`, p = `r round(f2[["Pr(>F)"]][1], 3)`). Likely reasons, for the limitations section: ceiling effect: about 90% of students rated housing satisfaction 7 or higher; restricted range: about 75% rated distance, rent and commute importance 4 or 5; the importance items measure preferences, not actual housing conditions; 10 coefficients estimated from 57 students. This is reported as a null result: we fail to reject H0 that all slopes are 0.Since the effect is not significant, no post hoc comparisons or directional claims are made. The ordering seen in the boxplot (family > roommates > off campus) is consistent with chance at this sample size, and the roommate group (n = `r sum(df_aov$housing_type == "Living with roommate")`) is small.
+
+## Notes for the next checkpoint
+
+* Only one respondent lives on residence, so our planned residence stratum cannot be analysed. The final report should acknowledge this, and the survey's separate "living with roommate" option overlaps with "off-campus", which is worth noting as a design limitation.
+* Housing arrangement and student status are strongly confounded (Table 3), so any model using one should consider adjusting for the other.
+* Commute time is the variable most clearly related to an outcome so far; a log-transformed commute time and a sensitivity fit without the two longest commutes are worth carrying forward into the multiple regression.
+* The importance items are concentrated at 4 and 5, which limits how much they can explain in the multiple regression.
+
+\newpage
+
+# Appendix: Code {.unnumbered}
+
+```{r appendix, ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
