@@ -1,0 +1,444 @@
+---
+title: "Exploratory Data Analysis: Factors Affecting Student Housing Choices"
+subtitle: "STA304H5F, Fall 2026, Group 33"
+date: today
+date-format: "MMMM D, YYYY"
+format:
+  pdf:
+    documentclass: article
+    geometry: "margin=1in"
+    number-sections: true
+    fig-pos: "H"
+    tbl-cap-location: top
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{fvextra}
+        \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+        \DefineVerbatimEnvironment{OutputCode}{Verbatim}{breaklines,commandchars=\\\{\}}
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+# ---- Packages ----
+library(tidyverse)
+library(easystats)   # datawizard, performance, report, effectsize, see
+library(knitr)
+
+theme_set(theme_minimal(base_size = 11))
+
+# ---- Helper functions ----
+# Format a p-value for inline text
+format_p <- function(p) ifelse(p < .001, "< .001", paste("=", formatC(p, format = "f", digits = 3)))
+
+# Print a report::report() result with readable variable names instead of code-book names
+readable_names <- c(transportation_satisfaction = "transportation satisfaction",
+                    housing_satisfaction        = "housing satisfaction",
+                    commute_time                = "commute time",
+                    housing_type                = "housing type",
+                    student_status              = "student status",
+                    cost_bracket                = "monthly housing cost (bracket)",
+                    distance_importance         = "importance of distance to campus",
+                    amenities_importance        = "importance of amenities",
+                    roommates_importance        = "importance of roommates")
+pretty_report <- function(x) {
+  txt <- paste(as.character(x), collapse = "\n")
+  for (v in names(readable_names)) {
+    txt <- gsub(v, readable_names[[v]], txt, fixed = TRUE)
+    # report() sometimes writes the names with spaces already, e.g. "cost bracket"
+    txt <- gsub(paste0("effect of ", gsub("_", " ", v)), paste("effect of", readable_names[[v]]),
+                txt, fixed = TRUE)
+  }
+  # report() cannot recover variable names from a table, so add them to the chi-square sentence
+  txt <- gsub("independence between\\s+(and\\s+)?suggests",
+              "independence between housing type and student status suggests", txt)
+  txt <- gsub("\n\\s+- ", "\n\n- ", txt)   # make report's bullets render as a markdown list
+  # move report's "Effect sizes were labelled..." notes to the end of the paragraph
+  paras <- trimws(strsplit(txt, "\n\\s*\n")[[1]])
+  notes <- grepl("^Effect sizes were labelled", paras)
+  cat(paste(c(paras[!notes], paras[notes]), collapse = "\n\n"), "\n")
+}
+
+# ---- Colours for the housing-type plots ----
+housing_colours <- c("Off-campus" = "#2C6E91", "Living with family" = "#E67E22",
+                  "Living with roommate" = "#27AE60")
+```
+
+```{r load-clean}
+# ---- Load the raw_export Google Forms export ----
+# fileEncoding removes the byte-order mark that the export puts in front of "studentID"
+raw_export <- read.csv("Factors Affecting Student Housing Survey (Responses).csv",
+                check.names = FALSE, fileEncoding = "UTF-8-BOM")
+n_raw_rows <- nrow(raw_export)
+n_raw_cols <- ncol(raw_export)
+
+# ---- Fix the column headers ----
+# commute_time contains a line break and housing_type has a trailing space
+names(raw_export) <- trimws(gsub("[\r\n]", "", names(raw_export)))
+raw_export <- raw_export[, names(raw_export) != ""]                       # drop the empty trailing columns
+raw_export <- raw_export |> rename(transportation_satisfaction = transportation_satisfacton)  # header typo
+n_empty_cols <- n_raw_cols - ncol(raw_export)
+
+# ---- Remove the duplicate submission ----
+duplicate_ids <- raw_export$studentID[duplicated(raw_export$studentID)]
+survey <- raw_export |> distinct(studentID, .keep_all = TRUE)   # rows are in submission order: keep the first
+
+# ---- Apply the code book labels ----
+importance_items <- c("distance_importance", "rent_importance", "commute_importance",
+                  "amenities_importance", "roommates_importance")
+
+survey <- survey |>
+  mutate(
+    gender = factor(gender, levels = 0:2, labels = c("Female", "Male", "Other")),
+    student_status = factor(student_status, levels = 0:1,
+                            labels = c("Domestic", "International")),
+    housing_type = factor(housing_type, levels = 0:3,
+                          labels = c("Residence", "Off-campus", "Living with family",
+                                     "Living with roommate")),
+    cost = factor(cost, levels = 0:6,
+                  labels = c("I do not pay for housing", "Less than $500", "$501 to $1000",
+                             "$1001 to $1500", "$1501 to $2000", "$2001 to $2500",
+                             "More than $2500"))
+  )
+
+n_respondents <- nrow(survey)
+n_missing <- sum(is.na(survey))
+
+# ---- Range checks against the code book ----
+values_in_range <- all(survey[importance_items] >= 1 & survey[importance_items] <= 5) &&
+  all(survey$housing_satisfaction %in% 1:10) &&
+  all(survey$transportation_satisfaction %in% 1:10) &&
+  all(survey$commute_time > 0)
+```
+
+# Data Loading and Usability
+
+The raw Google Forms export has `r n_raw_rows` rows and `r n_raw_cols` columns. The data are usable after a small amount of cleaning:
+
+* **Duplicate submission.** The ID `r duplicate_ids` appears twice with identical answers except for housing satisfaction (8, then 7). Only the first submission was kept, which leaves **`r n_respondents` respondents**.
+* **Formatting problems in the export.** The commute-time header contains a line break, the housing-type header has a trailing space, the transportation-satisfaction header is misspelled, and there are `r n_empty_cols` empty trailing columns. The headers were fixed and the empty columns dropped.
+* **Validity checks.** There are `r n_missing` missing values, and every response falls within the range the code book allows (`r ifelse(values_in_range, "no out-of-range values", "some out-of-range values were found")`). One respondent entered "N/A (not doing the project)" as their ID. Their answers look genuine, so they are kept.
+* **Sparse category.** Only `r sum(survey$housing_type == "Residence")` respondent lives in residence. That person appears in the descriptive tables but is left out of the between-group tests, so the residence stratum from our proposal effectively has no data.
+
+The five importance items are rated from 1 (least important) to 5 (most important), and the two satisfaction items from 1 (very dissatisfied) to 10 (very satisfied). Commute time is in minutes, and monthly housing cost was collected in brackets, so it is treated as qualitative.
+
+# Summary Statistics
+
+```{r tbl-quant}
+#| tbl-cap: "Summary statistics for the quantitative variables (n = 58)."
+quant_var_labels <- c("Importance of distance to campus (1-5)" = "distance_importance",
+                "Importance of rent (1-5)"               = "rent_importance",
+                "Importance of commute time (1-5)"       = "commute_importance",
+                "Importance of amenities (1-5)"          = "amenities_importance",
+                "Importance of roommates (1-5)"          = "roommates_importance",
+                "Housing satisfaction (1-10)"            = "housing_satisfaction",
+                "Commute time (minutes)"                 = "commute_time",
+                "Transportation satisfaction (1-10)"     = "transportation_satisfaction")
+
+# centrality = "all" gives Mean and Median (older datawizard versions accept only one value here)
+quant_summary <- datawizard::describe_distribution(survey, select = unname(quant_var_labels),
+                                               centrality = "all") |>
+  as.data.frame() |>
+  mutate(Variable = names(quant_var_labels)[match(Variable, quant_var_labels)])
+
+quant_summary |>
+  select(Variable, Mean, Median, SD, IQR, Min, Max, n) |>
+  kable(digits = 2, format = "pipe")
+```
+
+```{r tbl-qual}
+#| tbl-cap: "Counts and percentages for the qualitative variables (n = 58)."
+qual_vars <- survey |>
+  select(Gender = gender, `Student status` = student_status,
+         `Housing type` = housing_type, `Monthly housing cost` = cost)
+
+qual_summary <- datawizard::data_tabulate(qual_vars, remove_na = TRUE) |>
+  map_dfr(as.data.frame) |>
+  filter(!is.na(Value)) |>
+  group_by(Variable) |>
+  mutate(Variable = if_else(row_number() == 1, Variable, "")) |>
+  ungroup() |>
+  select(Variable, Category = Value, Count = N, `Percent (%)` = `Raw %`)
+
+kable(qual_summary, digits = 1, format = "pipe")
+```
+
+```{r stats-inline}
+quant_stats  <- quant_summary |> column_to_rownames("Variable")
+count_level <- function(v, lvl) sum(survey[[v]] == lvl)
+percent_level <- function(v, lvl) round(100 * mean(survey[[v]] == lvl))
+```
+
+**Comments.** The sample is close to balanced on gender (`r count_level("gender", "Female")` female, `r count_level("gender", "Male")` male, `r count_level("gender", "Other")` other) and evenly split by status (`r count_level("student_status", "Domestic")` domestic, `r count_level("student_status", "International")` international). Living with family is the most common housing type (`r percent_level("housing_type", "Living with family")`%), followed by off-campus (`r percent_level("housing_type", "Off-campus")`%) and living with roommates (`r percent_level("housing_type", "Living with roommate")`%). Nearly a third of respondents (`r percent_level("cost", "I do not pay for housing")`%) pay nothing for housing, which fits the large share living with family. No one chose the \$1501 to \$2000 bracket.
+
+All five importance items have a median of 4 or 5 and a mean between 3.8 and 4.2, so students rate almost every factor as important. Rent and distance to campus have the highest means, and amenities the lowest. Housing satisfaction is high overall (mean `r round(quant_stats[6, "Mean"], 2)`, median `r quant_stats[6, "Median"]` out of 10). Transportation satisfaction is lower and more spread out (mean `r round(quant_stats[8, "Mean"], 2)`, SD `r round(quant_stats[8, "SD"], 2)`). Commute time is clearly right-skewed: the mean (`r round(quant_stats[7, "Mean"], 1)` min) is well above the median (`r quant_stats[7, "Median"]` min), and the SD (`r round(quant_stats[7, "SD"], 1)`) is larger than the IQR (`r quant_stats[7, "IQR"]`). That skew comes from a few very long commutes (`r paste(sort(survey$commute_time, decreasing = TRUE)[1:2], collapse = " and ")` minutes). For the other variables, a mean close to the median does **not** mean the data are normal. Normality is checked on the model residuals in Section 4.
+
+# Plots and Tables
+
+We report the two tests named in our proposal and a test for each research question:
+
+* **Proposal simple test:** a one-sample t-test of whether mean housing satisfaction differs from 5;
+* **Proposal advanced test:** a multiple linear regression of housing satisfaction on housing type, monthly housing cost (rent range), commute time, and the importance of distance to campus, amenities and roommates;
+* **RQ1:** which factors matter most when choosing housing (Friedman test across the five importance ratings);
+* **RQ2:** whether housing type depends on international or domestic status (chi-square test of independence, with Fisher's exact test as a check);
+* **RQ3:** whether housing satisfaction differs between housing types (one-way ANOVA);
+
+```{r fig-hist}
+#| fig-cap: "Distribution of housing satisfaction (n = 58). The dashed line marks the scale midpoint of 5.5, the hypothesised mean in our one-sample t-test, and the solid line marks the sample mean. Almost every student scores above the midpoint, so mean satisfaction appears well above neutral. The distribution is left-skewed and bunched at the top of the scale."
+#| fig-height: 3.2
+#| fig-width: 6.5
+ggplot(survey, aes(x = housing_satisfaction)) +
+  geom_bar(fill = "#2C6E91", alpha = 0.85, width = 0.8) +
+  geom_vline(xintercept = 5.5, linetype = "dashed", colour = "#C0392B", linewidth = 0.8) +
+  geom_vline(xintercept = mean(survey$housing_satisfaction), colour = "#1B2631", linewidth = 0.8) +
+  annotate("text", x = 5.5, y = Inf, label = "Scale midpoint = 5.5", vjust = 1.5, hjust = 1.05,
+           size = 3.3, colour = "#C0392B") +
+  annotate("text", x = mean(survey$housing_satisfaction), y = Inf,
+           label = sprintf("Sample mean = %.2f", mean(survey$housing_satisfaction)),
+           vjust = 1.5, hjust = 1.05, size = 3.3) +
+  scale_x_continuous(breaks = 1:10, limits = c(0.5, 10.5)) +
+  labs(x = "Housing satisfaction (1 = very dissatisfied, 10 = very satisfied)",
+       y = "Number of respondents", title = "Distribution of housing satisfaction")
+```
+
+```{r fig-importance}
+#| fig-cap: "Distribution of importance ratings for each housing factor, ordered by mean rating (shown on the right). Rent, distance to campus and commute time are rated 4 or 5 by most students. Amenities and roommates get more middling ratings, which suggests these factors matter less when students choose housing."
+#| fig-height: 3.4
+#| fig-width: 7
+importance_labels <- c(distance_importance  = "Distance to campus",
+                   rent_importance      = "Rent",
+                   commute_importance   = "Commute time",
+                   amenities_importance = "Amenities",
+                   roommates_importance = "Roommates")
+
+importance_long <- survey |>
+  select(all_of(importance_items)) |>
+  pivot_longer(everything(), names_to = "factor", values_to = "rating") |>
+  mutate(factor = importance_labels[factor])
+
+importance_means <- importance_long |> group_by(factor) |> summarise(mean = mean(rating))
+importance_long  <- importance_long |>
+  mutate(factor = factor(factor, levels = importance_means$factor[order(importance_means$mean)]),
+         rating = factor(rating, levels = 5:1))
+
+ggplot(importance_long, aes(y = factor, fill = rating)) +
+  geom_bar(position = "fill", width = 0.7) +
+  geom_text(data = importance_means, aes(y = factor, x = 1.06, label = sprintf("%.2f", mean)),
+            inherit.aes = FALSE, size = 3.4) +
+  scale_x_continuous(labels = scales::percent, breaks = seq(0, 1, 0.25),
+                     expand = expansion(mult = c(0, 0.08))) +
+  scale_fill_manual(values = c("5" = "#1B4F72", "4" = "#5DADE2", "3" = "#D5D8DC",
+                               "2" = "#F0B27A", "1" = "#BA4A00"),
+                    breaks = as.character(1:5), name = "Importance\n(1 = least, 5 = most)") +
+  labs(x = "Share of respondents", y = NULL,
+       title = "How important is each factor when choosing housing?") +
+  theme(legend.position = "right", panel.grid.major.y = element_blank())
+```
+
+```{r tbl-cross}
+#| tbl-cap: "Housing type by student status, with row percentages. Most students living with family are domestic (85%), while most students living off-campus (75%) or with roommates (90%) are international, so housing type appears strongly related to student status."
+housing_by_status <- survey |>
+  count(housing_type, student_status) |>
+  group_by(housing_type) |>
+  mutate(cell = sprintf("%d (%.0f%%)", n, 100 * n / sum(n))) |>
+  select(-n) |>
+  pivot_wider(names_from = student_status, values_from = cell, values_fill = "0 (0%)") |>
+  left_join(count(survey, housing_type, name = "Total"), by = "housing_type") |>
+  select(`Housing type` = housing_type, Domestic, International, Total)
+
+kable(housing_by_status, format = "pipe", align = "lrrr")
+```
+
+```{r fig-box}
+#| fig-cap: "Housing satisfaction by housing type (the single residence respondent is excluded). Diamonds mark group means. Medians are 8 to 9 in every group and the boxes overlap heavily. Students living with family are slightly more satisfied on average, and off-campus students show the widest spread, but the differences look small."
+#| fig-height: 3.6
+#| fig-width: 6.5
+survey_no_residence <- survey |> filter(housing_type != "Residence") |> droplevels()
+
+ggplot(survey_no_residence, aes(x = housing_type, y = housing_satisfaction, fill = housing_type)) +
+  geom_boxplot(alpha = 0.8, outlier.shape = NA, width = 0.6) +
+  geom_jitter(width = 0.12, height = 0.12, alpha = 0.5, size = 1.4) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3, fill = "white") +
+  scale_fill_manual(values = housing_colours) +
+  scale_y_continuous(breaks = 1:10, limits = c(1, 10.3)) +
+  labs(x = "Housing type", y = "Housing satisfaction (1 to 10)",
+       title = "Housing satisfaction by housing type") +
+  guides(fill = "none")
+```
+
+# Checking Model Assumptions
+
+```{r fit-models}
+# ---- Proposal simple test: one-sample t-test (H0: mu = 5.5, the midpoint of the 1-10 scale) ----
+model_ttest    <- lm(housing_satisfaction ~ 1, data = survey)    # intercept-only model = one-sample t-test
+ttest_normality <- performance::check_normality(model_ttest)
+# ---- RQ2: chi-square test of independence (residence excluded, n = 1) ----
+rq2_table  <- table(survey_no_residence$housing_type, survey_no_residence$student_status)
+rq2_chisq  <- chisq.test(rq2_table)    # warning about small expected counts is expected
+rq2_min_expected <- min(rq2_chisq$expected)
+rq2_fisher   <- fisher.test(table(survey$housing_type, survey$student_status))  # all four housing types
+
+# ---- RQ3: one-way ANOVA ----
+model_anova    <- lm(housing_satisfaction ~ housing_type, data = survey_no_residence)
+anova_normality <- performance::check_normality(model_anova)
+# Levene's test via car directly (performance's print method errors in older versions)
+anova_levene  <- car::leveneTest(housing_satisfaction ~ housing_type, data = survey_no_residence)
+anova_kruskal   <- kruskal.test(housing_satisfaction ~ housing_type, data = survey_no_residence)
+```
+
+## Proposal simple test: one-sample t-test of housing satisfaction
+
+```{r fig-check-t}
+#| fig-cap: "Normality check for the one-sample t-test of housing satisfaction (performance package): Q-Q plot of the deviations from the mean (left) and their density against a normal curve (right)."
+#| fig-height: 3.4
+#| fig-width: 8
+performance::check_model(model_ttest, check = c("qq", "normality"))
+```
+
+**Interpretation.** The t-test assumes independent observations, which holds because each student answered once, and approximately normal data. As our proposal planned, we check normality with a Q-Q plot. The points bend away from the line in both tails, with a stepped pattern from the whole-number scale and a ceiling at 10, and the Shapiro-Wilk test rejects normality (p `r format_p(as.numeric(ttest_normality))`). **Normality is violated.** With n = `r n_respondents`, the central limit theorem makes the sample mean close to normal even when the data are not, so the t-test is still reasonable. As instructed, we note the violation and proceed.
+
+## Other tests
+
+**RQ1 (Friedman test).** Each student rated all five factors, so the ratings are repeated measures on the same people. They are also ordinal, with only five possible values. A one-way ANOVA would wrongly treat the five ratings as independent groups, so we use the Friedman test, a rank-based test for repeated measures. It does not assume normality or equal variances. It only assumes that respondents are independent of each other, which holds because each student answered once.
+
+**RQ2 (chi-square test of independence).** The chi-square approximation needs expected counts of about 5 or more in every cell. With the residence respondent excluded, the smallest expected count is `r round(rq2_min_expected, 2)`, just under 5. The assumption is therefore borderline, so we also report Fisher's exact test, which needs no large-sample approximation and lets us include the residence respondent.
+
+## RQ3: one-way ANOVA of housing satisfaction on housing type
+
+```{r fig-check-aov}
+#| fig-cap: "Assumption checks for the one-way ANOVA of housing satisfaction on housing type (performance package). Left: homogeneity of variance (residual spread across fitted values). Middle and right: normality of residuals (Q-Q plot and density against a normal curve)."
+#| fig-height: 6
+#| fig-width: 8
+performance::check_model(model_anova, check = c("homogeneity", "qq", "normality"))
+```
+
+**Interpretation.** The residual spread is similar across the three groups, and Levene's test finds no evidence that the variances differ (p `r format_p(anova_levene[["Pr(>F)"]][1])`), so **homogeneity of variance holds**. **Normality of the residuals is violated** (Shapiro-Wilk p `r format_p(as.numeric(anova_normality))`). The Q-Q plot shows the stepped pattern of a whole-number rating, and the left tail is heavier because few scores fall below 6 and the scale stops at 10. With moderately sized groups the F test is fairly robust to this, and the Kruskal-Wallis test, a rank-based alternative, gives the same conclusion (p `r format_p(anova_kruskal$p.value)`). As instructed, we note the violation and proceed with the ANOVA.
+
+## Proposal advanced test: multiple linear regression of housing satisfaction
+
+```{r mlr-prelim}
+# Multiple linear regression exactly as specified in the proposal:
+# housing satisfaction ~ housing arrangement + rent range + commute time + distance to campus
+#                        + amenities + roommates
+# "Distance to campus", "amenities" and "roommates" are the importance ratings, since those are
+# what the survey measured. Monthly housing cost (rent range) enters as its bracket number
+# (0 = pays nothing, ..., 6 = over $2500), because some brackets are empty or tiny.
+# Residence (n = 1) is excluded.
+survey_no_residence <- survey_no_residence |> mutate(cost_bracket = as.integer(cost) - 1)
+model_mlr_full <- lm(housing_satisfaction ~ housing_type + cost_bracket + commute_time +
+               distance_importance + amenities_importance + roommates_importance,
+             data = survey_no_residence)
+mlr_normality <- performance::check_normality(model_mlr_full)
+mlr_heteroscedasticity  <- performance::check_heteroscedasticity(model_mlr_full)
+n_significant     <- sum(parameters::model_parameters(model_mlr_full)$p[-1] < 0.05)
+```
+
+```{r fig-check-mlr}
+#| fig-cap: "Assumption checks for the multiple linear regression of housing satisfaction on housing type, monthly housing cost, commute time and the importance of distance to campus, amenities and roommates (performance package). Top: homogeneity of variance. Bottom: normality of residuals (Q-Q plot and density against a normal curve)."
+#| fig-height: 6
+#| fig-width: 8
+performance::check_model(model_mlr_full, check = c("homogeneity", "qq", "normality"))
+```
+**Interpretation.** `r ifelse(as.numeric(mlr_normality) >= 0.05, "Normality of the residuals is satisfied", "**Normality of the residuals is violated**")` (Shapiro-Wilk p `r format_p(as.numeric(mlr_normality))`). `r ifelse(as.numeric(mlr_heteroscedasticity) < 0.05, "However, the Breusch-Pagan test finds some evidence of non-constant variance", "The Breusch-Pagan test finds no evidence of non-constant variance")` (p `r format_p(as.numeric(mlr_heteroscedasticity))`), so **homogeneity of variance `r ifelse(as.numeric(mlr_heteroscedasticity) < 0.05, "is mildly violated**,", "holds**,")` likely because satisfaction is capped at 10. As instructed, we note the violation and proceed. Following the TA's feedback on our proposal, we do not check multicollinearity: we are describing associations among students rather than making predictions, so correlated predictors (for example, students who live with family mostly pay nothing for housing) do not need to be removed.
+
+# Statistical Tests
+
+## Proposal simple test: is mean housing satisfaction different from neutral?
+
+```{r test-t, results='asis'}
+ttest_midpoint  <- t.test(survey$housing_satisfaction, mu = 5.5)   # 5.5 = midpoint of the 1-10 scale
+ttest_cohens_d  <- effectsize::cohens_d(survey$housing_satisfaction, mu = 5.5)
+ttest_proposal_value   <- t.test(survey$housing_satisfaction, mu = 5)     # value stated in the proposal, for comparison
+```
+
+Our proposal set the hypothesised mean to 5 and called it the midpoint of the scale. On a 1-to-10 scale, however, the midpoint (the neutral response) is (1 + 10) / 2 = 5.5, so we test against 5.5. This matches the proposal's aim of testing whether students are satisfied or dissatisfied rather than neutral.
+
+A one-sample t-test of H~0~: $\mu$ = 5.5 against H~a~: $\mu \neq$ 5.5 finds that mean housing satisfaction (`r sprintf("%.2f", mean(survey$housing_satisfaction))`) differs significantly from 5.5 (t(`r ttest_midpoint$parameter`) = `r round(ttest_midpoint$statistic, 2)`, p `r format_p(ttest_midpoint$p.value)`). The 95% confidence interval for the mean is [`r sprintf("%.2f", ttest_midpoint$conf.int[1])`, `r sprintf("%.2f", ttest_midpoint$conf.int[2])`], and the effect is very large (Cohen's d = `r sprintf("%.2f", ttest_cohens_d$Cohens_d)`, 95% CI [`r sprintf("%.2f", ttest_cohens_d$CI_low)`, `r sprintf("%.2f", ttest_cohens_d$CI_high)`]).
+
+**Directional conclusion.** We reject H~0~. Mean housing satisfaction is significantly **higher** than the neutral midpoint, by about `r sprintf("%.1f", mean(survey$housing_satisfaction) - 5.5)` points, so STA304 students are, on average, satisfied with their housing rather than neutral. Testing against 5, the value stated in our proposal, gives the same conclusion (t(`r ttest_proposal_value$parameter`) = `r round(ttest_proposal_value$statistic, 2)`, p `r format_p(ttest_proposal_value$p.value)`).
+
+## Proposal advanced test: what predicts housing satisfaction?
+
+```{r test-mlr, results='asis'}
+pretty_report(report::report(model_mlr_full))
+mlr_fstat <- summary(model_mlr_full)$fstatistic
+mlr_pvalue <- pf(mlr_fstat[1], mlr_fstat[2], mlr_fstat[3], lower.tail = FALSE)
+```
+
+**Conclusion.** Taken together, the six predictors (seven model terms, because housing type has three groups) do not significantly explain housing satisfaction (F(`r mlr_fstat[2]`, `r mlr_fstat[3]`) = `r round(mlr_fstat[1], 2)`, p `r format_p(mlr_pvalue)`, R² = `r round(summary(model_mlr_full)$r.squared, 2)`), and `r ifelse(n_significant == 0, "none of the individual predictors is", paste(n_significant, "individual predictor(s) are"))` significant at the 5% level. We therefore find no evidence that housing satisfaction depends on any of these predictors, and we make no directional claims.
+
+\needspace{16\baselineskip}
+
+## Proposal advanced test: model selection
+
+```{r model-selection}
+# Model selection method: backward stepwise elimination by AIC (step() in base R).
+# Starting from the full model, the predictor whose removal lowers AIC the most is dropped,
+# one at a time, until no removal lowers AIC any further.
+model_mlr_selected <- step(model_mlr_full, direction = "backward", trace = 0)
+selected_predictors <- attr(terms(model_mlr_selected), "term.labels")
+
+# Candidate models compared by AIC, BIC and R-squared
+model_mean_only    <- lm(housing_satisfaction ~ 1, data = survey_no_residence)
+model_housing_only <- lm(housing_satisfaction ~ housing_type, data = survey_no_residence)
+candidate_models <- list("Full model (all six predictors)" = model_mlr_full,
+                   "Housing type only"               = model_housing_only,
+                   "No predictors (mean only)"       = model_mean_only)
+model_comparison <- tibble(Model = names(candidate_models),
+                  `Number of terms` = map_int(candidate_models, \(m) length(coef(m)) - 1),
+                  R2  = map_dbl(candidate_models, \(m) summary(m)$r.squared),
+                  AIC = map_dbl(candidate_models, AIC),
+                  BIC = map_dbl(candidate_models, BIC)) |>
+  arrange(AIC)
+```
+
+```{r tbl-selection}
+#| tbl-cap: "Comparison of candidate models for housing satisfaction (n = 57, residence excluded), ordered from lowest to highest AIC. Lower AIC and BIC indicate a better balance of fit and simplicity. The model with no predictors has the lowest AIC and BIC, so adding predictors does not improve on simply using the mean."
+kable(model_comparison, digits = 2, format = "pipe")
+```
+
+We select the model by **backward stepwise elimination using AIC** (Akaike information criterion). We start from the full model in Section 5.2 and repeatedly drop the predictor whose removal lowers AIC the most, stopping when no removal lowers it further. AIC rewards fit but penalises each extra term, so it guards against keeping predictors that add little. `r if (length(selected_predictors) == 0) "Backward elimination removes **every** predictor, leaving the model with no predictors (the mean only)." else paste0("Backward elimination keeps: ", paste(selected_predictors, collapse = ", "), ".")` @tbl-selection confirms this: the full model has the highest AIC and BIC of the candidates, even though its R² is larger, because the extra terms explain very little.
+
+**Conclusion.** None of housing type, monthly housing cost, commute time or the importance of distance to campus, amenities and roommates is associated with housing satisfaction in our sample once model complexity is taken into account. Housing satisfaction is high and fairly uniform (Section 5.1), and the variables we measured do not explain the remaining differences between students.
+
+## RQ1: Which factors matter most?
+
+```{r test-rq1}
+rq1_friedman <- friedman.test(as.matrix(survey[importance_items]))
+rq1_kendalls_w     <- effectsize::kendalls_w(as.matrix(survey[importance_items]))
+```
+
+The Friedman test finds a statistically significant difference in how important the five factors are rated ($\chi^2$(`r rq1_friedman$parameter`) = `r round(rq1_friedman$statistic, 2)`, p `r format_p(rq1_friedman$p.value)`). The effect is small (Kendall's W = `r round(rq1_kendalls_w$Kendalls_W, 2)`), which fits the fact that every factor is rated as fairly important.
+
+**Directional conclusion.** Rent (mean `r sprintf("%.2f", quant_stats[2, "Mean"])`), distance to campus (`r sprintf("%.2f", quant_stats[1, "Mean"])`) and commute time (`r sprintf("%.2f", quant_stats[3, "Mean"])`) are rated as more important than roommates (`r sprintf("%.2f", quant_stats[5, "Mean"])`) and amenities (`r sprintf("%.2f", quant_stats[4, "Mean"])`). Cost and location therefore come before the living environment when students choose housing. The TA cautioned that none of the course methods are designed for this kind of repeated rating data, so we treat this result as exploratory and lean mainly on the descriptive comparison in Figure 2.
+
+## RQ2: Does housing type depend on student status?
+
+```{r test-rq2, results='asis'}
+pretty_report(report::report(rq2_chisq))
+```
+
+Fisher's exact test, which includes the residence respondent and does not rely on large expected counts, agrees (p `r format_p(rq2_fisher$p.value)`).
+
+**Directional conclusion.** Housing type depends strongly on student status. Domestic students are much more likely to live with family (`r sum(survey$housing_type == "Living with family" & survey$student_status == "Domestic")` of `r sum(survey$student_status == "Domestic")` domestic students), while international students are much more likely to live off-campus or with roommates (`r sum(survey$housing_type %in% c("Off-campus", "Living with roommate") & survey$student_status == "International")` of `r sum(survey$student_status == "International")` international students).
+
+## RQ3: Does housing satisfaction differ by housing type?
+
+```{r test-rq3, results='asis'}
+anova_rq3 <- aov(housing_satisfaction ~ housing_type, data = survey_no_residence)
+pretty_report(report::report(anova_rq3))
+anova_rq3_table <- summary(anova_rq3)[[1]]
+```
+
+**Conclusion.** There is no statistically significant difference in mean housing satisfaction between students living off-campus, living with family and living with roommates (F(`r anova_rq3_table$Df[1]`, `r anova_rq3_table$Df[2]`) = `r round(anova_rq3_table[["F value"]][1], 2)`, p `r format_p(anova_rq3_table[["Pr(>F)"]][1])`). Because the effect is not significant, we make no directional claims and run no post-hoc comparisons. The ordering in the boxplot (family > roommates > off-campus) is consistent with chance at this sample size.
+
+\newpage
+
+# Appendix: Code {.unnumbered}
+
+```{r appendix, ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
