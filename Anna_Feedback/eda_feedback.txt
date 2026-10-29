@@ -1,0 +1,30 @@
+STA304 Exploratory Data Analysis Feedback
+
+Disclaimer: in the process of constructing feedback, I recorded my audio and got AI to rephrase my feedback in a concise, clear manner so that I can mark faster + you get more detailed feedback. I did not run any of the assignments through AI.
+
+Calling the Friedman test repeated measures
+
+You call the Friedman test a repeated measures test. Some people might consider it one, but it is not necessarily the same thing. When people say repeated measures, they usually think of an experiment that takes the same type of measurement several times from one subject. For the Friedman test, you get one person to rank or rate several categories. I think the Friedman test is appropriate for your data. I just do not like calling it repeated measures, because that term usually refers to something else. Be careful with this.
+
+Directional conclusions from the Friedman test
+
+You report the chi-square test statistic and a p-value. You then conclude that rent, distance from campus, and commute time are rated more important than roommates and amenities. A Friedman test only tells you that at least one category differs. To say which categories differ, you would need pairwise comparisons, for example rent against roommates and rent against amenities, with a correction for multiple testing. Without them, naming which categories are rated higher is an incorrect interpretation.
+
+Note about the TA
+
+You write that the TA cautioned that none of the course methods are designed for this kind of repeated rating data, so you treat the result as exploratory. That is not what I said. I cautioned against the classical repeated measures ANOVA, because when groups were talking about repeated measures, I thought they were trying to use that method and not the Friedman test. Your results are exploratory because this is an observational study and not an experimental design.
+
+Reporting with report::report()
+
+You used report::report(), and I would recommend putting the results in a table when you are fitting a multiple linear regression, so it does not look so messy. report::report() works fine for a small test such as a t-test. It gets to be too much for a multiple linear regression with many coefficients.
+
+Backward stepwise elimination with AIC
+
+You used backward stepwise elimination with AIC. I am not deducting marks for this, but it is something to consider for the future. AIC is aimed at prediction. In an inferential study, the more variables you exclude, the stronger a remaining variable can look, and a variable may overinflate an effect that would not be significant in the presence of other predictors. People doing inferential studies often choose the model based on expertise in the field instead.
+
+Grade breakdown
+
+Computing Statistical Tests (0.32 / 0.4)
+Directional conclusions for significant effects (0.07 / 0.15). I deducted 0.08 because the conclusion about which categories are rated more important is not supported by the Friedman test alone, and no pairwise comparisons with a correction were done.
+
+Total (1.92 / 2)
