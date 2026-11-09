@@ -6,6 +6,7 @@ library(thematic)
 library(ggplot2)
 library(dplyr)
 library(tidyr)
+library(DT)
 
 thematic::thematic_shiny(font = "auto")
 
@@ -33,7 +34,16 @@ importance_colours <- c("5" = "#1B4F72", "4" = "#5DADE2", "3" = "#D5D8DC",
 
 rq1_friedman <- friedman.test(as.matrix(survey[names(importance_labels)]))
 
-source("ui_layout.R")
+#print(exists("importance_labels"))
+#print(importance_labels)
+
+#source("ui_layout.R") <- ORIGINAL!!!!!
+source("ui_layout.R", local = TRUE)
+
+rq1_panel <- create_rq1_panel(importance_labels)
+#source("ui_layout.R", echo = TRUE)
+
+#print(exists("importance_labels"))
 
 ui <- page_navbar(
   theme = bs_theme(bootswatch = 'cyborg'),
@@ -59,14 +69,36 @@ ui <- page_navbar(
             ),
   rq1_panel,
   nav_panel(title = "Housing choice by Residence status"),
-  nav_panel(title = "Housing satisfaction by Housing type")
+  nav_panel(title = "Housing satisfaction by Housing type"),
+  nav_panel(
+    title = "Survey Responses",
+    DT::dataTableOutput("responseTable")
+  )
 )
 
 server = function(input, output, session) {
   # bs_themer()
   
-  source(file.path("server_logic.R"), local = TRUE)$value
+  # ORIGINAL!!! 
+  # source(file.path("server_logic.R"), local = TRUE)$value
   
+  source("server_logic.R", local = TRUE)
+  
+  # Interactive survey response table
+  output$responseTable <- DT::renderDT({
+    
+    DT::datatable(
+      survey,
+      options = list(
+        pageLength = 10,
+        autoWidth = TRUE,
+        scrollX = TRUE
+      ),
+      filter = "top",
+      rownames = FALSE
+    )
+    
+  })
   
 }
 
