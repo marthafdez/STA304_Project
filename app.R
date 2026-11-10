@@ -41,7 +41,8 @@ rq1_friedman <- friedman.test(as.matrix(survey[names(importance_labels)]))
 source("ui_layout.R", local = TRUE)
 
 rq1_panel <- create_rq1_panel(importance_labels)
-#source("ui_layout.R", echo = TRUE)
+about_panel <- create_about_panel()   
+#source("ui_layout.R", echo = TRUE)  
 
 #print(exists("importance_labels"))
 
@@ -73,7 +74,8 @@ ui <- page_navbar(
   nav_panel(
     title = "Survey Responses",
     DT::dataTableOutput("responseTable")
-  )
+  ),
+  about_panel
 )
 
 server = function(input, output, session) {
