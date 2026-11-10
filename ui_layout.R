@@ -55,7 +55,7 @@ create_rq1_panel <- function(importance_labels) {
       )
     )
   )
-}
+  
 create_about_panel <- function() {
   nav_panel(
     title = "About",
