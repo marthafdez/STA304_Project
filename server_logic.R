@@ -1,32 +1,39 @@
 # ---- Summary: Histograms -----
 
-# output$hist <- renderPlot({
-#  req(input$hist_var)
-#  max_val <- if (input$hist_var == "housing_satisfaction") 10 else 5   # scale ranges
-#  
-#  ggplot(survey, aes(x = .data[[input$hist_var]])) +
-#    geom_bar(fill = "#2C6E91", alpha = 0.85, width = 0.8) +
-#    scale_x_continuous(breaks = 1:max_val, limits = c(0.5, max_val + 0.5)) +
-#    labs(x = "Rating", y = "Number of respondents") +
-#    theme_minimal(base_size = 14)
-# })
-
 #| fig-cap: "Distribution of housing satisfaction (n = 58). The dashed line marks the scale midpoint of 5.5, the hypothesised mean in our one-sample t-test, and the solid line marks the sample mean. Almost every student scores above the midpoint, so mean satisfaction appears well above neutral. The distribution is left-skewed and bunched at the top of the scale."
 #| fig-height: 3.2
 #| fig-width: 6.5
+hist_labels <- c(housing_satisfaction = "housing satisfaction",
+                 rent_importance      = "importance of rent",
+                 distance_importance  = "importance of distance to campus",
+                 commute_importance   = "importance of commute time",
+                 roommates_importance = "importance of roommates",
+                 amenities_importance = "importance of amenities")
+
 output$hist <- renderPlot({
-  ggplot(survey, aes(x = housing_satisfaction)) +
-  geom_bar(fill = "#2C6E91", alpha = 0.85, width = 0.8) +
-  geom_vline(xintercept = 5.5, linetype = "dashed", colour = "#C0392B", linewidth = 0.8) +
-  geom_vline(xintercept = mean(survey$housing_satisfaction), colour = "#1B2631", linewidth = 0.8) +
-  annotate("text", x = 5.5, y = Inf, label = "Scale midpoint = 5.5", vjust = 1.5, hjust = 1.05,
-           size = 3.3, colour = "#C0392B") +
-  annotate("text", x = mean(survey$housing_satisfaction), y = Inf,
-           label = sprintf("Sample mean = %.2f", mean(survey$housing_satisfaction)),
-           vjust = 1.5, hjust = 1.05, size = 3.3) +
-  scale_x_continuous(breaks = 1:10, limits = c(0.5, 10.5)) +
-  labs(x = "Housing satisfaction (1 = very dissatisfied, 10 = very satisfied)",
-       y = "Number of respondents", title = "Distribution of housing satisfaction")
+  req(input$hist_var)
+  
+  x       <- survey[[input$hist_var]]
+  is_sat  <- input$hist_var == "housing_satisfaction"
+  max_val <- if (is_sat) 10 else 5          # satisfaction is 1-10, importance items are 1-5
+  mid_val <- (1 + max_val) / 2              # scale midpoint: 5.5 or 3
+  x_lab   <- if (is_sat) "Housing satisfaction (1 = very dissatisfied, 10 = very satisfied)"
+  else "Importance (1 = least important, 5 = most important)"
+  
+  ggplot(survey, aes(x = .data[[input$hist_var]])) +
+    geom_bar(fill = "#2C6E91", alpha = 0.85, width = 0.8) +
+    geom_vline(xintercept = mid_val, linetype = "dashed", colour = "#C0392B", linewidth = 0.8) +
+    geom_vline(xintercept = mean(x, na.rm = TRUE), colour = "#1B2631", linewidth = 0.8) +
+    annotate("text", x = mid_val, y = Inf, label = sprintf("Scale midpoint = %s", mid_val),
+             vjust = 1.5, hjust = 1.05, size = 3.3, colour = "#C0392B") +
+    annotate("text", x = mean(x, na.rm = TRUE), y = Inf,
+             label = sprintf("Sample mean = %.2f", mean(x, na.rm = TRUE)),
+             vjust = 3, hjust = 1.05, size = 3.3) +
+    scale_x_continuous(breaks = 1:max_val, limits = c(0.5, max_val + 0.5)) +
+    labs(x = x_lab, y = "Number of respondents",
+         title = paste("Distribution of", hist_labels[[input$hist_var]]),
+         subtitle = sprintf("n = %d", sum(!is.na(x)))) +
+    theme_minimal(base_size = 14)
 })
 
 
