@@ -302,3 +302,17 @@ output$mlr_text <- renderText({
           as.integer(f[2]), as.integer(f[3]), unname(f[1]), format_p(p),
           if (length(sel)) paste(sel, collapse = ", ") else "no predictors (mean only)")
 })
+
+
+# ---- Plain-language interpretations (interpretations.R) ----
+# Every interpretation reads interp_data(). When the demographic filter is added,
+# return the filtered data here (e.g. filtered_data()) and all the text follows it.
+interp_data <- reactive({
+  survey
+})
+
+output$summary_interpretation <- renderUI(interpret_variable(interp_data(), input$hist_var))
+output$rq1_interpretation     <- renderUI(interpret_importance(interp_data(), input$factors))
+output$rq2_interpretation     <- renderUI(interpret_status_housing(interp_data(), input$rq2_incl_res))
+output$rq3_interpretation     <- renderUI(interpret_satisfaction_by_type(interp_data(), input$rq3_incl_res))
+output$mlr_interpretation     <- renderUI(interpret_regression(interp_data()))

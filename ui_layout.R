@@ -50,6 +50,10 @@ create_rq1_panel <- function(importance_labels) {
                   withSpinner(plotOutput("importance_grpbr_plot")))
       ),
       card(
+        card_header("What does this mean?"),
+        uiOutput("rq1_interpretation")
+      ),
+      card(
         card_header("Friedman test (all five factors)"),
         textOutput("friedman_text")
       )
@@ -70,6 +74,10 @@ create_rq2_panel <- function() {
                   withSpinner(plotOutput("rq2_pct_plot"))),
         nav_panel("Counts",
                   withSpinner(plotOutput("rq2_count_plot")))
+      ),
+      card(
+        card_header("What does this mean?"),
+        uiOutput("rq2_interpretation")
       ),
       card(
         card_header("Chi-square test and Fisher's exact test"),
@@ -102,6 +110,10 @@ create_rq3_panel <- function() {
                   withSpinner(plotOutput("rq3_ci_plot")))
       ),
       card(
+        card_header("What does this mean?"),
+        uiOutput("rq3_interpretation")
+      ),
+      card(
         card_header("One-way ANOVA (with Kruskal-Wallis and Levene's test)"),
         textOutput("rq3_text")
       )
@@ -124,6 +136,10 @@ create_mlr_panel <- function() {
                   withSpinner(plotOutput("mlr_coef_plot"))),
         nav_panel("Model comparison",
                   tableOutput("mlr_comparison"))
+      ),
+      card(
+        card_header("What does this mean?"),
+        uiOutput("mlr_interpretation")
       ),
       card(
         card_header("Full model fit"),

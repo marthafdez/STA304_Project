@@ -90,6 +90,7 @@ model_comparison <- model_comparison[order(model_comparison$AIC), ]
 
 #source("ui_layout.R") <- ORIGINAL!!!!!
 source("ui_layout.R", local = TRUE)
+source("interpretations.R", local = TRUE)   # plain-language text for every tab
 
 rq1_panel <- create_rq1_panel(importance_labels)
 rq2_panel <- create_rq2_panel()
@@ -120,7 +121,8 @@ ui <- page_navbar(
                                        "Importance of Roommates" = "roommates_importance",
                                        "Importance of Amenities" = "amenities_importance"),
                         selected = "housing_satisfaction"),
-            plotOutput("hist")
+            plotOutput("hist"),
+            card(card_header("What does this mean?"), uiOutput("summary_interpretation"))
   ),
   rq1_panel,
   rq2_panel,
