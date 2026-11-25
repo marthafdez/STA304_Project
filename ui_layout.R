@@ -94,6 +94,11 @@ create_rq3_panel <- function() {
       sidebar = sidebar(
         checkboxInput("rq3_incl_res", "Include the one residence respondent", value = FALSE),
         conditionalPanel(
+          condition = "input.rq3_tabs != 'Means with 95% CI'",
+          sliderInput("rq3_range", "Satisfaction axis range:",
+                      min = 1, max = 10, value = c(1, 10), step = 1, ticks = FALSE)
+        ),
+        conditionalPanel(
           condition = "input.rq3_tabs == 'Means with 95% CI'",
           radioButtons("rq3_ci_axis", "Axis range:",
                        choices = c("Zoomed in", "Full scale (1-10)"))
@@ -128,7 +133,13 @@ create_mlr_panel <- function() {
       sidebar = sidebar(
         radioButtons("mlr_scale", "Coefficient scale:",
                      choices = c("Per 1 SD of predictor", "Original units")),
-        helpText("Per 1 SD puts the numeric predictors on a comparable scale. Significance is the same either way.")
+        helpText("Per 1 SD puts the numeric predictors on a comparable scale. Significance is the same either way."),
+        checkboxInput("mlr_custom_x", "Set the x-axis range myself", value = FALSE),
+        conditionalPanel(
+          condition = "input.mlr_custom_x",
+          sliderInput("mlr_xlim", "X-axis range:", min = -3, max = 3,
+                      value = c(-1, 3), step = 0.1, ticks = FALSE)
+        )
       ),
       navset_card_underline(
         title = "What predicts housing satisfaction?",

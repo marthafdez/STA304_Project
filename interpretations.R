@@ -12,9 +12,9 @@
 #   Regression tab ..... interpret_regression(data)
 #
 # The server outputs that call these are at the bottom of server_logic.R. They
-# all read one reactive, interp_data(). When the demographic filter is added,
-# change that one line to return the filtered data and every interpretation
-# follows the filter.
+# all read one reactive, shown_data() (top of server_logic.R). When the
+# demographic filter is added, change that one line to return the filtered data
+# and every interpretation follows the filter.
 #
 # The functions accept the raw survey (codes 0, 1, 2, ...) or the labelled data
 # from app.R, and they never error on small or empty filtered groups: below
@@ -132,7 +132,7 @@ interpret_variable <- function(data, var) {
   mid <- (1 + info$max) / 2
 
   howto <- interp_howto(sprintf(
-    "each bar counts the students who gave that rating, from 1 (%s) to %d (%s). The dashed red line is the middle of the scale (%s) and the solid line is the average.",
+    "each bar shows how many students (or what percent of them, if you switch the y-axis) gave that rating, from 1 (%s) to %d (%s). The dashed red line is the middle of the scale (%s) and the solid line is the average. Use the slider to zoom in on part of the scale.",
     if (is_sat) "very dissatisfied" else "least important", info$max,
     if (is_sat) "very satisfied" else "most important", format(mid)))
   if (n == 0) return(tagList(howto, interp_no_data()))
