@@ -50,6 +50,10 @@ create_rq1_panel <- function(importance_labels) {
                   withSpinner(plotOutput("importance_grpbr_plot")))
       ),
       card(
+        card_header("What does this mean?"),
+        uiOutput("rq1_interpretation")
+      ),
+      card(
         card_header("Friedman test (all five factors)"),
         textOutput("friedman_text")
       )
@@ -72,6 +76,10 @@ create_rq2_panel <- function() {
                   withSpinner(plotOutput("rq2_count_plot")))
       ),
       card(
+        card_header("What does this mean?"),
+        uiOutput("rq2_interpretation")
+      ),
+      card(
         card_header("Chi-square test and Fisher's exact test"),
         textOutput("rq2_text")
       )
@@ -85,6 +93,11 @@ create_rq3_panel <- function() {
     layout_sidebar(
       sidebar = sidebar(
         checkboxInput("rq3_incl_res", "Include the one residence respondent", value = FALSE),
+        conditionalPanel(
+          condition = "input.rq3_tabs != 'Means with 95% CI'",
+          sliderInput("rq3_range", "Satisfaction axis range:",
+                      min = 1, max = 10, value = c(1, 10), step = 1, ticks = FALSE)
+        ),
         conditionalPanel(
           condition = "input.rq3_tabs == 'Means with 95% CI'",
           radioButtons("rq3_ci_axis", "Axis range:",
@@ -102,6 +115,10 @@ create_rq3_panel <- function() {
                   withSpinner(plotOutput("rq3_ci_plot")))
       ),
       card(
+        card_header("What does this mean?"),
+        uiOutput("rq3_interpretation")
+      ),
+      card(
         card_header("One-way ANOVA (with Kruskal-Wallis and Levene's test)"),
         textOutput("rq3_text")
       )
@@ -116,7 +133,13 @@ create_mlr_panel <- function() {
       sidebar = sidebar(
         radioButtons("mlr_scale", "Coefficient scale:",
                      choices = c("Per 1 SD of predictor", "Original units")),
-        helpText("Per 1 SD puts the numeric predictors on a comparable scale. Significance is the same either way.")
+        helpText("Per 1 SD puts the numeric predictors on a comparable scale. Significance is the same either way."),
+        checkboxInput("mlr_custom_x", "Set the x-axis range myself", value = FALSE),
+        conditionalPanel(
+          condition = "input.mlr_custom_x",
+          sliderInput("mlr_xlim", "X-axis range:", min = -3, max = 3,
+                      value = c(-1, 3), step = 0.1, ticks = FALSE)
+        )
       ),
       navset_card_underline(
         title = "What predicts housing satisfaction?",
@@ -124,6 +147,10 @@ create_mlr_panel <- function() {
                   withSpinner(plotOutput("mlr_coef_plot"))),
         nav_panel("Model comparison",
                   tableOutput("mlr_comparison"))
+      ),
+      card(
+        card_header("What does this mean?"),
+        uiOutput("mlr_interpretation")
       ),
       card(
         card_header("Full model fit"),

@@ -2,13 +2,13 @@ library(shiny)
 library(bslib)
 library(shinycssloaders) # loading screens
 library(colourpicker)
-library(thematic)
 library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(DT)
 
-thematic::thematic_shiny(font = "auto")
+# thematic::thematic_shiny() was removed: it shrank every axis label to ~6px and the
+# plots set their own colours, so it had no other visible effect.
 
 # ---- Load survey data (same cleaning steps as the EDA script) ----
 # Keep the CSV in the same folder as app.R
@@ -90,6 +90,7 @@ model_comparison <- model_comparison[order(model_comparison$AIC), ]
 
 #source("ui_layout.R") <- ORIGINAL!!!!!
 source("ui_layout.R", local = TRUE)
+source("interpretations.R", local = TRUE)   # plain-language text for every tab
 
 rq1_panel <- create_rq1_panel(importance_labels)
 rq2_panel <- create_rq2_panel()
@@ -102,6 +103,7 @@ about_panel <- create_about_panel()
 
 ui <- page_navbar(
   theme = bs_theme(bootswatch = 'cyborg'),
+  fillable = FALSE,   # let pages scroll so plots keep their full height
   
   navbar_options = navbar_options(
     bg = "#0A5E54",
@@ -110,17 +112,28 @@ ui <- page_navbar(
   ),
   
   title = "Student Housing Study",
-  nav_panel(title = "Summary", 
-            selectInput(inputId = "hist_var",
-                        label = "What var would you like to see?",
-                        choices = list("Housing Satisfaction" = "housing_satisfaction",
-                                       "Importance of Rent" = "rent_importance",
-                                       "Importance of Distance" = "distance_importance",
-                                       "Importance of Commute Time" = "commute_importance",
-                                       "Importance of Roommates" = "roommates_importance",
-                                       "Importance of Amenities" = "amenities_importance"),
-                        selected = "housing_satisfaction"),
-            plotOutput("hist")
+  nav_panel(
+    title = "Summary",
+    layout_sidebar(
+      sidebar = sidebar(
+        selectInput(inputId = "hist_var",
+                    label = "Variable to show:",
+                    choices = list("Housing satisfaction" = "housing_satisfaction",
+                                   "Importance of rent" = "rent_importance",
+                                   "Importance of distance to campus" = "distance_importance",
+                                   "Importance of commute time" = "commute_importance",
+                                   "Importance of roommates" = "roommates_importance",
+                                   "Importance of amenities" = "amenities_importance"),
+                    selected = "housing_satisfaction"),
+        radioButtons("hist_yscale", "Y-axis shows:",
+                     choices = c("Number of students", "Percent of students")),
+        sliderInput("hist_xrange", "Rating range on the x-axis:",
+                    min = 1, max = 10, value = c(1, 10), step = 1, ticks = FALSE),
+        helpText("Zooming only changes what is shown. No responses are removed.")
+      ),
+      card(withSpinner(plotOutput("hist"))),
+      card(card_header("What does this mean?"), uiOutput("summary_interpretation"))
+    )
   ),
   rq1_panel,
   rq2_panel,
@@ -141,22 +154,31 @@ server = function(input, output, session) {
   
   source("server_logic.R", local = TRUE)
   
-  # Interactive survey response table
+  # Interactive survey response table (follows shown_data(), so it updates with the filter)
+  table_names <- c(studentID = "Student ID", gender = "Gender", student_status = "Student status",
+                   distance_importance = "Importance: distance", rent_importance = "Importance: rent",
+                   commute_importance = "Importance: commute", amenities_importance = "Importance: amenities",
+                   roommates_importance = "Importance: roommates", housing_type = "Housing type",
+                   housing_satisfaction = "Housing satisfaction (1-10)", cost = "Monthly housing cost",
+                   commute_time = "Commute time (minutes)",
+                   transportation_satisfacton = "Transportation satisfaction (1-10)")
+
   output$responseTable <- DT::renderDT({
-    
+    d <- shown_data()
+    d <- d[, intersect(names(table_names), names(d)), drop = FALSE]
+    names(d) <- unname(table_names[names(d)])
     DT::datatable(
-      survey,
+      d,
+      class = "compact stripe nowrap",     # nowrap: long answers no longer stretch every row
       options = list(
         pageLength = 10,
-        autoWidth = TRUE,
         scrollX = TRUE
       ),
       filter = "top",
       rownames = FALSE
     )
-    
   })
-  
+
 }
 
 shinyApp(ui, server)
