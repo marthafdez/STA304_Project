@@ -3,6 +3,9 @@
 **Course:** STA304H5F — Surveys, Sampling and Observational Data
 **Group:** 33
 
+## Link to Website
+https://connect.posit.cloud/marthafdez/content/01a21b10-16f0-dc2f-0b5e-23a52d29afeb
+
 ## Overview
 
 This repository contains the project proposal and supporting files for our STA304H5F group project, **"Analyzing Factors Affecting Student Housing Choices."** The project investigates which factors matter most to students when choosing housing, and whether housing type and satisfaction differ across student groups.
