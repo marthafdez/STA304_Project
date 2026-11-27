@@ -14,6 +14,13 @@ rq1_data <- reactive({ filter_demo(survey, input$rq1_gender, input$rq1_status) }
 output$sum_n <- renderText({ n_text(sum_data(), survey) })
 output$rq1_n <- renderText({ n_text(rq1_data(), survey) })
 
+# ---- Data for the Survey Responses table ----
+# The table has its own column filters, so it shows all respondents. The tabs use their own
+# filtered data (sum_data, rq1_data, rq2_data, rq3_data, mlr_data) instead.
+shown_data <- reactive({
+  survey
+})
+
 # ---- Summary: Histograms -----
 
 #| fig-cap: "Distribution of housing satisfaction (n = 58). The dashed line marks the scale midpoint of 5.5, the hypothesised mean in our one-sample t-test, and the solid line marks the sample mean. Almost every student scores above the midpoint, so mean satisfaction appears well above neutral. The distribution is left-skewed and bunched at the top of the scale."
@@ -26,9 +33,14 @@ hist_labels <- c(housing_satisfaction = "housing satisfaction",
                  roommates_importance = "importance of roommates",
                  amenities_importance = "importance of amenities")
 
+# Reset the x-axis slider to the scale of the chosen variable (1-10 or 1-5)
+observeEvent(input$hist_var, {
+  max_val <- if (input$hist_var == "housing_satisfaction") 10 else 5
+  updateSliderInput(session, "hist_xrange", min = 1, max = max_val, value = c(1, max_val))
+})
+
 output$hist <- renderPlot({
-  req(input$hist_var)
-  
+  req(input$hist_var, input$hist_xrange)
   d       <- sum_data()
   need_rows(d)
   x       <- d[[input$hist_var]]
@@ -37,18 +49,23 @@ output$hist <- renderPlot({
   mid_val <- (1 + max_val) / 2              # scale midpoint: 5.5 or 3
   x_lab   <- if (is_sat) "Housing satisfaction (1 = very dissatisfied, 10 = very satisfied)"
   else "Importance (1 = least important, 5 = most important)"
+  as_pct  <- identical(input$hist_yscale, "Percent of students")
+  x_zoom  <- pmin(pmax(input$hist_xrange, 1), max_val)
   
   ggplot(d, aes(x = .data[[input$hist_var]])) +
-    geom_bar(fill = "#2C6E91", alpha = 0.85, width = 0.8) +
+    { if (as_pct) geom_bar(aes(y = after_stat(count / sum(count))), fill = "#2C6E91", alpha = 0.85, width = 0.8)
+      else geom_bar(fill = "#2C6E91", alpha = 0.85, width = 0.8) } +
     geom_vline(xintercept = mid_val, linetype = "dashed", colour = "#C0392B", linewidth = 0.8) +
     geom_vline(xintercept = mean(x, na.rm = TRUE), colour = "#1B2631", linewidth = 0.8) +
     annotate("text", x = mid_val, y = Inf, label = sprintf("Scale midpoint = %s", mid_val),
-             vjust = 1.5, hjust = 1.05, size = 3.3, colour = "#C0392B") +
+             vjust = 1.5, hjust = 1.05, size = 4, colour = "#C0392B") +
     annotate("text", x = mean(x, na.rm = TRUE), y = Inf,
              label = sprintf("Sample mean = %.2f", mean(x, na.rm = TRUE)),
-             vjust = 3, hjust = 1.05, size = 3.3) +
+             vjust = 3, hjust = 1.05, size = 4) +
     scale_x_continuous(breaks = 1:max_val, limits = c(0.5, max_val + 0.5)) +
-    labs(x = x_lab, y = "Number of respondents",
+    { if (as_pct) scale_y_continuous(labels = scales::percent) } +
+    coord_cartesian(xlim = c(x_zoom[1] - 0.5, x_zoom[2] + 0.5)) +   # zoom without dropping data
+    labs(x = x_lab, y = if (as_pct) "Percent of respondents" else "Number of respondents",
          title = paste("Distribution of", hist_labels[[input$hist_var]]),
          subtitle = sprintf("n = %d", sum(!is.na(x)))) +
     theme_minimal(base_size = 14)
@@ -75,19 +92,19 @@ output$importance_plot <- renderPlot({
   d$factor     <- factor(d$factor, levels = lv)
   means$factor <- factor(means$factor, levels = lv)
   
-    d$rating <- factor(d$rating, levels = 5:1)
-    ggplot(d, aes(y = factor, fill = rating)) +
-      geom_bar(position = "fill", width = 0.7) +
-      geom_text(data = means, aes(y = factor, x = 1.06, label = sprintf("%.2f", mean)),
-                inherit.aes = FALSE, size = 4) +
-      scale_x_continuous(labels = scales::percent, breaks = seq(0, 1, 0.25),
-                         expand = expansion(mult = c(0, 0.08))) +
-      scale_fill_manual(values = c("5" = "#1B4F72", "4" = "#5DADE2", "3" = "#D5D8DC",
-                                   "2" = "#F0B27A", "1" = "#BA4A00"),
-                        breaks = as.character(1:5), name = "Importance\n(1 = least, 5 = most)") +
-      labs(x = "Share of respondents", y = NULL) +
-      theme_minimal(base_size = 14) +
-      theme(panel.grid.major.y = element_blank())
+  d$rating <- factor(d$rating, levels = 5:1)
+  ggplot(d, aes(y = factor, fill = rating)) +
+    geom_bar(position = "fill", width = 0.7) +
+    geom_text(data = means, aes(y = factor, x = 1.06, label = sprintf("%.2f", mean)),
+              inherit.aes = FALSE, size = 4) +
+    scale_x_continuous(labels = scales::percent, breaks = seq(0, 1, 0.25),
+                       expand = expansion(mult = c(0, 0.08))) +
+    scale_fill_manual(values = c("5" = "#1B4F72", "4" = "#5DADE2", "3" = "#D5D8DC",
+                                 "2" = "#F0B27A", "1" = "#BA4A00"),
+                      breaks = as.character(1:5), name = "Importance\n(1 = least, 5 = most)") +
+    labs(x = "Share of respondents", y = NULL) +
+    theme_minimal(base_size = 14) +
+    theme(panel.grid.major.y = element_blank())
 })
 
 # ---- RQ1: Grouped Bar Plot ----
@@ -128,7 +145,7 @@ output$importance_mn_plot <- renderPlot({
     labs(x = "Mean importance rating (1 = least, 5 = most)", y = NULL) +
     theme_minimal(base_size = 14) +
     theme(panel.grid.major.y = element_blank())
-
+  
 })
 
 # ---- RQ1: Text description (Need to change) ----
@@ -212,6 +229,12 @@ rq3_base <- reactive({ if (isTRUE(input$rq3_incl_res)) survey else survey_no_res
 rq3_data <- reactive({ droplevels(filter_demo(rq3_base(), input$rq3_gender, input$rq3_status)) })
 output$rq3_n <- renderText({ n_text(rq3_data(), rq3_base()) })
 
+# Satisfaction axis range chosen in the sidebar (boxplot and distribution charts)
+rq3_zoom <- reactive({
+  r <- if (is.null(input$rq3_range)) c(1, 10) else input$rq3_range
+  c(r[1] - 0.5, r[2] + 0.5)
+})
+
 output$rq3_box_plot <- renderPlot({
   d <- rq3_data()
   need_rows(d)
@@ -222,6 +245,7 @@ output$rq3_box_plot <- renderPlot({
     stat_summary(fun = mean, geom = "point", shape = 23, size = 3.5, fill = "white") +
     scale_fill_manual(values = housing_colours) +
     scale_y_continuous(breaks = 1:10, limits = c(0.5, 10.5)) +
+    coord_cartesian(ylim = rq3_zoom()) +                 # zoom without dropping data
     labs(x = "Housing type", y = "Housing satisfaction (1 to 10)",
          subtitle = "Diamonds mark group means") +
     guides(fill = "none") +
@@ -235,6 +259,7 @@ output$rq3_dist_plot <- renderPlot({
     geom_bar(width = 0.8) +
     facet_wrap(~ grp, ncol = 1) +
     scale_x_continuous(breaks = 1:10, limits = c(0.5, 10.5)) +
+    coord_cartesian(xlim = rq3_zoom()) +                 # zoom without dropping data
     scale_fill_manual(values = housing_colours) +
     labs(x = "Housing satisfaction (1 = very dissatisfied, 10 = very satisfied)",
          y = "Number of respondents") +
@@ -342,6 +367,14 @@ mlr_coefs <- reactive({
   out
 })
 
+# Keep the x-axis slider's range in step with the current coefficients
+observeEvent(mlr_coefs(), {
+  cf <- mlr_coefs()
+  lo <- floor(min(cf$lo) * 2) / 2 - 0.5
+  hi <- ceiling(max(cf$hi) * 2) / 2 + 0.5
+  updateSliderInput(session, "mlr_xlim", min = lo, max = hi, value = c(lo, hi))
+})
+
 output$mlr_coef_plot <- renderPlot({
   cf <- mlr_coefs()
   per_sd <- !identical(input$mlr_scale, "Original units")
@@ -356,6 +389,7 @@ output$mlr_coef_plot <- renderPlot({
          else "Change in satisfaction (points) per one-unit increase",
          y = NULL, subtitle = "Dots are estimates, lines are 95% confidence intervals") +
     theme_minimal(base_size = 14) +
+    { if (isTRUE(input$mlr_custom_x) && !is.null(input$mlr_xlim)) coord_cartesian(xlim = input$mlr_xlim) } +
     theme(panel.grid.major.y = element_blank(), legend.position = "bottom")
 })
 
@@ -387,3 +421,15 @@ output$mlr_text <- renderText({
           as.integer(f[2]), as.integer(f[3]), unname(f[1]), format_p(p),
           if (length(sel)) paste(sel, collapse = ", ") else "no predictors (mean only)")
 })
+
+
+# ---- Plain-language interpretations (interpretations.R) ----
+# Each one reads the same filtered data as its tab, so the text matches what is on screen.
+
+mlr_interp_data <- reactive({ filter_demo(survey, input$mlr_gender, input$mlr_status) })   # interpret_regression() drops the residence respondent itself
+
+output$summary_interpretation <- renderUI(interpret_variable(sum_data(), input$hist_var))
+output$rq1_interpretation     <- renderUI(interpret_importance(rq1_data(), input$factors))
+output$rq2_interpretation     <- renderUI(interpret_status_housing(rq2_data(), input$rq2_incl_res))
+output$rq3_interpretation     <- renderUI(interpret_satisfaction_by_type(rq3_data(), input$rq3_incl_res))
+output$mlr_interpretation     <- renderUI(interpret_regression(mlr_interp_data()))
