@@ -53,8 +53,8 @@ output$hist <- renderPlot({
   x_zoom  <- pmin(pmax(input$hist_xrange, 1), max_val)
   
   ggplot(d, aes(x = .data[[input$hist_var]])) +
-    { if (as_pct) geom_bar(aes(y = after_stat(count / sum(count))), fill = "#2C6E91", alpha = 0.85, width = 0.8)
-      else geom_bar(fill = "#2C6E91", alpha = 0.85, width = 0.8) } +
+    { if (as_pct) geom_bar(aes(y = after_stat(count / sum(count))), fill = input$hist_colour, alpha = 0.85, width = 0.8)
+      else geom_bar(fill = input$hist_colour, alpha = 0.85, width = 0.8) } +
     geom_vline(xintercept = mid_val, linetype = "dashed", colour = "#C0392B", linewidth = 0.8) +
     geom_vline(xintercept = mean(x, na.rm = TRUE), colour = "#1B2631", linewidth = 0.8) +
     annotate("text", x = mid_val, y = Inf, label = sprintf("Scale midpoint = %s", mid_val),

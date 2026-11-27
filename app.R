@@ -102,6 +102,8 @@ ui <- page_navbar(
                                    "Importance of roommates" = "roommates_importance",
                                    "Importance of amenities" = "amenities_importance"),
                     selected = "housing_satisfaction"),
+        colourInput("hist_colour", "Bar colour:",
+                    value = "#2C6E91"),
         radioButtons("hist_yscale", "Y-axis shows:",
                      choices = c("Number of students", "Percent of students")),
         sliderInput("hist_xrange", "Rating range on the x-axis:",
