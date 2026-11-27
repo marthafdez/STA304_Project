@@ -22,32 +22,50 @@
 #            )
 #          ))
 
+# Demographic filters shared by the sidebars (prefix keeps the input ids unique per tab)
+demographic_filters <- function(prefix, include_status = TRUE) {
+  tagList(
+    tags$hr(),
+    checkboxGroupInput(paste0(prefix, "_gender"), "Gender:",
+                       choices = levels(droplevels(survey$gender)),
+                       selected = levels(droplevels(survey$gender))),
+    if (include_status)
+      checkboxGroupInput(paste0(prefix, "_status"), "Student status:",
+                         choices = levels(droplevels(survey$student_status)),
+                         selected = levels(droplevels(survey$student_status))),
+    textOutput(paste0(prefix, "_n"))
+  )
+}
+
 create_rq1_panel <- function(importance_labels) {
   nav_panel(
     title = "Importance of Factors",
     layout_sidebar(
       sidebar = sidebar(
-        radioButtons(
-          "plot_type", "Plot type:",
-          choices = c("Rating distribution", "Mean rating")
-        ),
         checkboxGroupInput(
           "factors", "Factors to show:",
           choices = unname(importance_labels),
           selected = unname(importance_labels)
         ),
         conditionalPanel(
-          condition = "input.plot_type == 'Mean rating'",
+          condition = "input.importance_panel == 'imp_mn_panel'",
           colourInput("bar_colour", "Bar colour:",
                       value = "#2C6E91")
-        )
+        ),
+        demographic_filters("rq1")
       ),
       navset_card_underline(
+        id = "importance_panel",
         title = "How important is each factor when choosing housing?",
-        nav_panel("Stacked Bar Chart",
+        nav_panel(title = "Stacked Bar Chart",
+                  value = "imp_panel",
                   withSpinner(plotOutput("importance_plot"))),
-        nav_panel("Grouped Bar Chart",
-                  withSpinner(plotOutput("importance_grpbr_plot")))
+        nav_panel(title = "Grouped Bar Chart",
+                  value = "imp_grpbr_panel",
+                  withSpinner(plotOutput("importance_grpbr_plot"))),
+        nav_panel("Mean Bar Chart",
+                  value = "imp_mn_panel",
+                  withSpinner(plotOutput("importance_mn_plot")))
       ),
       card(
         card_header("Friedman test (all five factors)"),
@@ -62,7 +80,8 @@ create_rq2_panel <- function() {
     layout_sidebar(
       sidebar = sidebar(
         checkboxInput("rq2_incl_res", "Include the one residence respondent", value = FALSE),
-        helpText("The residence group has only one student, so it is left out by default.")
+        helpText("The residence group has only one student, so it is left out by default."),
+        demographic_filters("rq2", include_status = FALSE)   # student status is the variable being studied
       ),
       navset_card_underline(
         title = "Is housing type related to student status?",
@@ -89,7 +108,8 @@ create_rq3_panel <- function() {
           condition = "input.rq3_tabs == 'Means with 95% CI'",
           radioButtons("rq3_ci_axis", "Axis range:",
                        choices = c("Zoomed in", "Full scale (1-10)"))
-        )
+        ),
+        demographic_filters("rq3")
       ),
       navset_card_underline(
         id = "rq3_tabs",
@@ -116,7 +136,8 @@ create_mlr_panel <- function() {
       sidebar = sidebar(
         radioButtons("mlr_scale", "Coefficient scale:",
                      choices = c("Per 1 SD of predictor", "Original units")),
-        helpText("Per 1 SD puts the numeric predictors on a comparable scale. Significance is the same either way.")
+        helpText("Per 1 SD puts the numeric predictors on a comparable scale. Significance is the same either way."),
+        demographic_filters("mlr")
       ),
       navset_card_underline(
         title = "What predicts housing satisfaction?",

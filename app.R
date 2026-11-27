@@ -55,35 +55,12 @@ importance_labels <- c(distance_importance  = "Distance to campus",
                        amenities_importance = "Amenities",
                        roommates_importance = "Roommates")
 
-importance_long <- survey |>
-  select(all_of(names(importance_labels))) |>
-  pivot_longer(everything(), names_to = "factor", values_to = "rating") |>
-  mutate(factor = unname(importance_labels[factor]))
-
 importance_colours <- c("5" = "#1B4F72", "4" = "#5DADE2", "3" = "#D5D8DC",
                         "2" = "#F0B27A", "1" = "#BA4A00")
 
-rq1_friedman <- friedman.test(as.matrix(survey[names(importance_labels)]))
-
-# ---- Regression (proposal's advanced test): same model as the EDA script ----
+# ---- Regression (proposal's advanced test): same model as the EDA script; it is fitted in server_logic.R so the filters apply ----
 mlr_formula <- housing_satisfaction ~ housing_type + cost_bracket + commute_time +
   distance_importance + amenities_importance + roommates_importance
-model_mlr_full     <- lm(mlr_formula, data = survey_no_residence)
-model_mlr_selected <- step(model_mlr_full, direction = "backward", trace = 0)   # backward AIC selection
-model_mean_only    <- lm(housing_satisfaction ~ 1, data = survey_no_residence)
-model_housing_only <- lm(housing_satisfaction ~ housing_type, data = survey_no_residence)
-candidate_models <- list("Full model (all six predictors)" = model_mlr_full,
-                         "Housing type only"               = model_housing_only,
-                         "No predictors (mean only)"       = model_mean_only)
-model_comparison <- data.frame(
-  Model = names(candidate_models),
-  `Number of terms` = vapply(candidate_models, function(m) length(coef(m)) - 1, numeric(1)),
-  R2  = vapply(candidate_models, function(m) summary(m)$r.squared, numeric(1)),
-  AIC = vapply(candidate_models, AIC, numeric(1)),
-  BIC = vapply(candidate_models, BIC, numeric(1)),
-  check.names = FALSE, row.names = NULL
-)
-model_comparison <- model_comparison[order(model_comparison$AIC), ]
 
 #print(exists("importance_labels"))
 #print(importance_labels)
@@ -110,18 +87,23 @@ ui <- page_navbar(
   ),
   
   title = "Student Housing Study",
-  nav_panel(title = "Summary", 
-            selectInput(inputId = "hist_var",
-                        label = "What var would you like to see?",
-                        choices = list("Housing Satisfaction" = "housing_satisfaction",
-                                       "Importance of Rent" = "rent_importance",
-                                       "Importance of Distance" = "distance_importance",
-                                       "Importance of Commute Time" = "commute_importance",
-                                       "Importance of Roommates" = "roommates_importance",
-                                       "Importance of Amenities" = "amenities_importance"),
-                        selected = "housing_satisfaction"),
-            plotOutput("hist")
-  ),
+  nav_panel(title = "Summary",
+            layout_sidebar(
+              sidebar = sidebar(
+                selectInput(inputId = "hist_var",
+                            label = "What var would you like to see?",
+                            choices = list("Housing Satisfaction" = "housing_satisfaction",
+                                           "Importance of Rent" = "rent_importance",
+                                           "Importance of Distance" = "distance_importance",
+                                           "Importance of Commute Time" = "commute_importance",
+                                           "Importance of Roommates" = "roommates_importance",
+                                           "Importance of Amenities" = "amenities_importance"),
+                            selected = "housing_satisfaction"),
+                
+                demographic_filters("sum")
+              ),
+              plotOutput("hist")
+            )),
   rq1_panel,
   rq2_panel,
   rq3_panel,

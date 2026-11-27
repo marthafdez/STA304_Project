@@ -1,3 +1,19 @@
+# ---- Demographic filters ----
+# Each tab has its own gender / student status checkboxes (ids start with the tab prefix)
+filter_demo <- function(d, genders, statuses = NULL) {
+  d <- d[d$gender %in% genders | is.na(d$gender), , drop = FALSE]
+  if (!is.null(statuses)) d <- d[d$student_status %in% statuses | is.na(d$student_status), , drop = FALSE]
+  d
+}
+need_rows <- function(d) validate(need(nrow(d) > 0, "No respondents match the selected filters."))
+n_text    <- function(d, base) sprintf("Showing %d of %d respondents", nrow(d), nrow(base))
+
+sum_data <- reactive({ filter_demo(survey, input$sum_gender, input$sum_status) })
+rq1_data <- reactive({ filter_demo(survey, input$rq1_gender, input$rq1_status) })
+
+output$sum_n <- renderText({ n_text(sum_data(), survey) })
+output$rq1_n <- renderText({ n_text(rq1_data(), survey) })
+
 # ---- Summary: Histograms -----
 
 #| fig-cap: "Distribution of housing satisfaction (n = 58). The dashed line marks the scale midpoint of 5.5, the hypothesised mean in our one-sample t-test, and the solid line marks the sample mean. Almost every student scores above the midpoint, so mean satisfaction appears well above neutral. The distribution is left-skewed and bunched at the top of the scale."
@@ -13,14 +29,16 @@ hist_labels <- c(housing_satisfaction = "housing satisfaction",
 output$hist <- renderPlot({
   req(input$hist_var)
   
-  x       <- survey[[input$hist_var]]
+  d       <- sum_data()
+  need_rows(d)
+  x       <- d[[input$hist_var]]
   is_sat  <- input$hist_var == "housing_satisfaction"
   max_val <- if (is_sat) 10 else 5          # satisfaction is 1-10, importance items are 1-5
   mid_val <- (1 + max_val) / 2              # scale midpoint: 5.5 or 3
   x_lab   <- if (is_sat) "Housing satisfaction (1 = very dissatisfied, 10 = very satisfied)"
   else "Importance (1 = least important, 5 = most important)"
   
-  ggplot(survey, aes(x = .data[[input$hist_var]])) +
+  ggplot(d, aes(x = .data[[input$hist_var]])) +
     geom_bar(fill = "#2C6E91", alpha = 0.85, width = 0.8) +
     geom_vline(xintercept = mid_val, linetype = "dashed", colour = "#C0392B", linewidth = 0.8) +
     geom_vline(xintercept = mean(x, na.rm = TRUE), colour = "#1B2631", linewidth = 0.8) +
@@ -39,16 +57,24 @@ output$hist <- renderPlot({
 
 # ---- RQ1: Stacked Bar -----
 
+importance_long_f <- reactive({
+  d <- rq1_data()
+  need_rows(d)
+  d |>
+    select(all_of(names(importance_labels))) |>
+    pivot_longer(everything(), names_to = "factor", values_to = "rating") |>
+    mutate(factor = unname(importance_labels[factor]))
+})
+
 output$importance_plot <- renderPlot({
   req(input$factors)
   
-  d <- importance_long |> filter(factor %in% input$factors)
+  d <- importance_long_f() |> filter(factor %in% input$factors)
   means <- d |> group_by(factor) |> summarise(mean = mean(rating))
   lv <- means$factor[order(means$mean)]          # order factors by mean rating
   d$factor     <- factor(d$factor, levels = lv)
   means$factor <- factor(means$factor, levels = lv)
   
-  if (input$plot_type == "Rating distribution") {
     d$rating <- factor(d$rating, levels = 5:1)
     ggplot(d, aes(y = factor, fill = rating)) +
       geom_bar(position = "fill", width = 0.7) +
@@ -62,23 +88,13 @@ output$importance_plot <- renderPlot({
       labs(x = "Share of respondents", y = NULL) +
       theme_minimal(base_size = 14) +
       theme(panel.grid.major.y = element_blank())
-  } else {
-    # ---- Mean bar plot ----
-    ggplot(means, aes(x = mean, y = factor)) +
-      geom_col(fill = input$bar_colour, width = 0.7) +
-      geom_text(aes(label = sprintf("%.2f", mean)), hjust = -0.2, size = 4) +
-      scale_x_continuous(limits = c(0, 5.3), breaks = 0:5) +
-      labs(x = "Mean importance rating (1 = least, 5 = most)", y = NULL) +
-      theme_minimal(base_size = 14) +
-      theme(panel.grid.major.y = element_blank())
-  }
 })
 
 # ---- RQ1: Grouped Bar Plot ----
 output$importance_grpbr_plot <- renderPlot({
   req(input$factors)
   
-  d <- importance_long |> filter(factor %in% input$factors)
+  d <- importance_long_f() |> filter(factor %in% input$factors)
   means <- d |> group_by(factor) |> summarise(mean = mean(rating))
   lv <- means$factor[order(means$mean)]          # same factor order as the stacked plot
   d$factor <- factor(d$factor, levels = lv)
@@ -94,12 +110,34 @@ output$importance_grpbr_plot <- renderPlot({
     theme(panel.grid.major.y = element_blank())
 })
 
+# ---- RQ1: Mean Bar Plot ----
+
+output$importance_mn_plot <- renderPlot({
+  req(input$factors)
+  
+  d <- importance_long_f() |> filter(factor %in% input$factors)
+  means <- d |> group_by(factor) |> summarise(mean = mean(rating))
+  lv <- means$factor[order(means$mean)]          # order factors by mean rating
+  d$factor     <- factor(d$factor, levels = lv)
+  means$factor <- factor(means$factor, levels = lv)
+  
+  ggplot(means, aes(x = mean, y = factor)) +
+    geom_col(fill = input$bar_colour, width = 0.7) +
+    geom_text(aes(label = sprintf("%.2f", mean)), hjust = -0.2, size = 4) +
+    scale_x_continuous(limits = c(0, 5.3), breaks = 0:5) +
+    labs(x = "Mean importance rating (1 = least, 5 = most)", y = NULL) +
+    theme_minimal(base_size = 14) +
+    theme(panel.grid.major.y = element_blank())
+
+})
+
 # ---- RQ1: Text description (Need to change) ----
 output$friedman_text <- renderText({
+  d  <- rq1_data()
+  fr <- tryCatch(friedman.test(as.matrix(d[names(importance_labels)])), error = function(e) NULL)
+  validate(need(nrow(d) >= 3 && !is.null(fr), "Too few respondents match these filters to run the test."))
   sprintf("Friedman chi-squared = %.2f, df = %d, p %s. %s",
-          rq1_friedman$statistic, as.integer(rq1_friedman$parameter),
-          ifelse(rq1_friedman$p.value < .001, "< .001",
-                 paste("=", formatC(rq1_friedman$p.value, format = "f", digits = 3))),
+          fr$statistic, as.integer(fr$parameter), format_p(fr$p.value),
           "A small p-value means the five factors are not all rated equally important.")
 })
 
@@ -112,11 +150,12 @@ with_n_labels <- function(d) {
 }
 
 # ---- RQ2: housing type by student status ----
-rq2_data <- reactive({
-  if (isTRUE(input$rq2_incl_res)) survey else survey_no_residence
-})
+rq2_base <- reactive({ if (isTRUE(input$rq2_incl_res)) survey else survey_no_residence })
+rq2_data <- reactive({ droplevels(filter_demo(rq2_base(), input$rq2_gender)) })   # no status filter: status is the variable studied
+output$rq2_n <- renderText({ n_text(rq2_data(), rq2_base()) })
 
 output$rq2_pct_plot <- renderPlot({
+  need_rows(rq2_data())
   d <- with_n_labels(rq2_data())
   counts <- d |> count(grp, student_status) |> group_by(grp) |>
     mutate(pct = n / sum(n)) |> ungroup()
@@ -137,6 +176,7 @@ output$rq2_pct_plot <- renderPlot({
 })
 
 output$rq2_count_plot <- renderPlot({
+  need_rows(rq2_data())
   d <- with_n_labels(rq2_data())
   counts <- d |> count(grp, student_status, .drop = FALSE)
   
@@ -153,6 +193,8 @@ output$rq2_count_plot <- renderPlot({
 
 output$rq2_text <- renderText({
   d    <- rq2_data()
+  validate(need(nlevels(d$housing_type) >= 2 && nlevels(d$student_status) >= 2,
+                "Not enough variation in the filtered data to run these tests (need at least two housing types and both student statuses)."))
   tab  <- table(d$housing_type, d$student_status)
   chi  <- suppressWarnings(chisq.test(tab))
   fish <- fisher.test(tab)
@@ -166,12 +208,13 @@ output$rq2_text <- renderText({
 })
 
 # ---- RQ3: housing satisfaction by housing type ----
-rq3_data <- reactive({
-  if (isTRUE(input$rq3_incl_res)) survey else survey_no_residence
-})
+rq3_base <- reactive({ if (isTRUE(input$rq3_incl_res)) survey else survey_no_residence })
+rq3_data <- reactive({ droplevels(filter_demo(rq3_base(), input$rq3_gender, input$rq3_status)) })
+output$rq3_n <- renderText({ n_text(rq3_data(), rq3_base()) })
 
 output$rq3_box_plot <- renderPlot({
   d <- rq3_data()
+  need_rows(d)
   ggplot(d, aes(x = housing_type, y = housing_satisfaction, fill = housing_type)) +
     geom_boxplot(alpha = 0.8, outlier.shape = NA, width = 0.6) +
     geom_jitter(position = position_jitter(width = 0.12, height = 0.12, seed = 1),
@@ -186,6 +229,7 @@ output$rq3_box_plot <- renderPlot({
 })
 
 output$rq3_dist_plot <- renderPlot({
+  need_rows(rq3_data())
   d <- with_n_labels(rq3_data())
   ggplot(d, aes(x = housing_satisfaction, fill = housing_type)) +
     geom_bar(width = 0.8) +
@@ -200,6 +244,7 @@ output$rq3_dist_plot <- renderPlot({
 
 output$rq3_ci_plot <- renderPlot({
   d  <- rq3_data()
+  need_rows(d)
   ci <- d |>
     group_by(housing_type) |>
     summarise(n = n(), mean = mean(housing_satisfaction),
@@ -232,6 +277,8 @@ output$rq3_ci_plot <- renderPlot({
 
 output$rq3_text <- renderText({
   d   <- rq3_data()
+  validate(need(nlevels(d$housing_type) >= 2 && nrow(d) > nlevels(d$housing_type),
+                "Not enough respondents or housing types left after filtering to run these tests."))
   a   <- summary(aov(housing_satisfaction ~ housing_type, data = d))[[1]]
   kw  <- kruskal.test(housing_satisfaction ~ housing_type, data = d)
   dev <- abs(d$housing_satisfaction - ave(d$housing_satisfaction, d$housing_type, FUN = median))
@@ -253,16 +300,40 @@ mlr_term_labels <- c("housing_typeLiving with family"   = "Living with family (v
                      "amenities_importance"             = "Importance of amenities",
                      "roommates_importance"             = "Importance of roommates")
 
+mlr_data <- reactive({
+  d <- filter_demo(survey_no_residence, input$mlr_gender, input$mlr_status)
+  d <- d[complete.cases(d[, all.vars(mlr_formula)]), ]
+  droplevels(d)
+})
+output$mlr_n <- renderText({ n_text(mlr_data(), survey_no_residence) })
+
+check_mlr_data <- function(d) {
+  validate(need(nrow(d) >= 20, "Too few respondents match these filters to fit the regression (at least 20 are needed)."),
+           need(nlevels(d$housing_type) >= 2, "Only one housing type is left after filtering, so the regression cannot be fit."))
+}
+
+mlr_models <- reactive({
+  d <- mlr_data()
+  check_mlr_data(d)
+  full <- try(lm(mlr_formula, data = d), silent = TRUE)
+  validate(need(!inherits(full, "try-error"), "The regression could not be fit for this subset."))
+  list(full         = full,
+       selected     = tryCatch(step(full, direction = "backward", trace = 0), error = function(e) full),
+       housing_only = lm(housing_satisfaction ~ housing_type, data = d),
+       mean_only    = lm(housing_satisfaction ~ 1, data = d))
+})
+
 mlr_coefs <- reactive({
-  d <- survey_no_residence
+  d <- mlr_data()
+  check_mlr_data(d)
   if (!identical(input$mlr_scale, "Original units")) {
     d <- d |> mutate(across(c(cost_bracket, commute_time, distance_importance,
                               amenities_importance, roommates_importance),
-                            \(v) as.numeric(scale(v))))
+                            \(v) if (isTRUE(sd(v) > 0)) as.numeric(scale(v)) else v))
   }
   m   <- lm(mlr_formula, data = d)
   est <- coef(summary(m))
-  ci  <- confint(m)
+  ci  <- confint(m)[rownames(est), , drop = FALSE]
   out <- data.frame(term = rownames(est), estimate = est[, "Estimate"],
                     lo = ci[, 1], hi = ci[, 2], p = est[, "Pr(>|t|)"], row.names = NULL)
   out <- out[out$term != "(Intercept)", ]
@@ -289,16 +360,30 @@ output$mlr_coef_plot <- renderPlot({
 })
 
 output$mlr_comparison <- renderTable({
-  model_comparison
+  m <- mlr_models()
+  candidates <- list("Full model (all six predictors)" = m$full,
+                     "Housing type only"               = m$housing_only,
+                     "No predictors (mean only)"       = m$mean_only)
+  out <- data.frame(
+    Model = names(candidates),
+    `Number of terms` = vapply(candidates, function(x) sum(!is.na(coef(x))) - 1, numeric(1)),
+    R2  = vapply(candidates, function(x) summary(x)$r.squared, numeric(1)),
+    AIC = vapply(candidates, AIC, numeric(1)),
+    BIC = vapply(candidates, BIC, numeric(1)),
+    check.names = FALSE, row.names = NULL
+  )
+  out[order(out$AIC), ]
 }, digits = 2)
 
 output$mlr_text <- renderText({
-  s <- summary(model_mlr_full)
+  m <- mlr_models()
+  s <- summary(m$full)
   f <- s$fstatistic
+  validate(need(!is.null(f), "The overall F test is not available for this subset."))
   p <- unname(pf(f[1], f[2], f[3], lower.tail = FALSE))
-  sel <- attr(terms(model_mlr_selected), "term.labels")
+  sel <- attr(terms(m$selected), "term.labels")
   sprintf("n = %d. R-squared = %.3f (adjusted %.3f). Overall F(%d, %d) = %.2f, p %s. Backward AIC selection kept: %s.",
-          as.integer(nobs(model_mlr_full)), s$r.squared, s$adj.r.squared,
+          as.integer(nobs(m$full)), s$r.squared, s$adj.r.squared,
           as.integer(f[2]), as.integer(f[3]), unname(f[1]), format_p(p),
           if (length(sel)) paste(sel, collapse = ", ") else "no predictors (mean only)")
 })
